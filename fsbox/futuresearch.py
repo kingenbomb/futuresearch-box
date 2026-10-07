@@ -120,6 +120,31 @@ class FutureSearchClient:
                                 r.status_code, code)
         return status
 
+    def is_activated(self, access_token: str) -> bool:
+        """这个号激活了没。判据是 cc_user_activations 有没有行 —— 有行=已激活，
+        空=waitlist（造 key 会 403）。"""
+        try:
+            r = self.s.get(
+                f"{config.SUPABASE_URL}/rest/v1/cc_user_activations?select=user_id",
+                headers={"apikey": config.SUPABASE_ANON_KEY,
+                         "Authorization": f"Bearer {access_token}"},
+                timeout=20)
+            return r.status_code == 200 and bool(r.json())
+        except Exception:
+            return False
+
+    def billing_status(self, api_key: str) -> tuple[int | None, float | None]:
+        """打一次 /billing，返回 (HTTP 状态码, 余额)。可用性探测用。"""
+        try:
+            r = self.s.get(f"{config.API_BASE}/billing",
+                           headers={"Authorization": f"Bearer {api_key}"}, timeout=20)
+            if r.status_code != 200:
+                return r.status_code, None
+            v = (r.json() or {}).get("current_balance_dollars")
+            return 200, (float(v) if isinstance(v, (int, float)) else None)
+        except Exception:
+            return None, None
+
     # ---------- 邀请码（Supabase RPC） ----------
 
     def _rpc(self, name: str, access_token: str, payload: dict):

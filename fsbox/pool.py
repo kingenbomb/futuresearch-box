@@ -86,6 +86,7 @@ def register_one(cfg: dict, idx: int, client: FutureSearchClient) -> dict:
     password = gen_password(cfg)
     retries = int(cfg.get("register_retries", 3))
     last_err = None
+    user_id = ""
 
     for attempt in range(1, retries + 1):
         try:
@@ -126,6 +127,25 @@ def register_one(cfg: dict, idx: int, client: FutureSearchClient) -> dict:
             }
         except (UpstreamError, SolveError, Exception) as e:  # noqa: BLE001
             last_err = f"{type(e).__name__}: {str(e)[:160]}"
+            # at_capacity = 上游激活闸门满了：号其实已经建好（signup 过了），只是不给激活。
+            # 这种别丢 —— 存成 pending，panel 的「检查」会在上游放行后自动补 key。
+            if "at_capacity" in last_err and user_id:
+                log(f"#{idx} 上游激活满员，{email} 存为 pending（稍后检查可自动转正）")
+                return {
+                    "email": email,
+                    "email_source": box.get("source", "local"),
+                    "password": password,
+                    "user_id": user_id,
+                    "api_key": "",
+                    "balance": None,
+                    "status": "pending",
+                    "fails": 0,
+                    "ref_parent": None,
+                    "ref_code": None,
+                    "probe_note": "建号成功，等上游激活闸门放行",
+                    "created_at": _now(),
+                    "last_used": 0,
+                }
             wait = (20 * attempt + random.uniform(0, 5)) if _is_backoff(last_err) \
                 else (2 * attempt + random.uniform(0, 1))
             log(f"#{idx} 第{attempt}次失败: {last_err}  ({wait:.0f}s 后重试)")
@@ -228,26 +248,64 @@ class Pool:
             return True
 
     def check(self, email: str) -> dict:
-        """面板上的「健康检查」：真打一次上游 /billing，刷新余额。"""
+        """可用性探测（面板「健康检查」）。
+
+        有 key  → 打上游 /billing，200 即可用，顺带刷新余额。
+        没 key  → 说明是 pending（注册时激活没过），这里重新登录查 cc_user_activations：
+                  如果上游已经放行，就顺手把 key 补出来，让它转正成 active。
+        每次都记 probe_ok / probe_total，面板「实测」列显示这个。
+        """
         a = self.find(email)
         if not a:
             return {"ok": False, "error": "no such account"}
         client = FutureSearchClient(proxy=self.cfg.get("proxy") or "")
-        try:
-            bal = client.billing(a["api_key"])
-        except Exception as e:
-            return {"ok": False, "error": f"{type(e).__name__}: {str(e)[:120]}"}
+        ok = False
+        code = None
+        note = ""
+        balance = None
+
+        key = a.get("api_key")
+        if key:
+            code, balance = client.billing_status(key)
+            ok = code == 200
+            note = f"HTTP {code}" if code else "连不上"
+        else:
+            # 没 key 的 pending 号：看上游有没有放行，放行了就补 key
+            try:
+                sess = client.password_login(a["email"], a.get("password") or "")
+                tok = sess["access_token"]
+                uid = (sess.get("user") or {}).get("id") or a.get("user_id")
+                if client.is_activated(tok):
+                    a["api_key"] = client.create_api_key(tok, uid, "fsbox")
+                    key = a["api_key"]
+                    a["user_id"] = uid
+                    code, balance = client.billing_status(key)
+                    ok = code == 200
+                    note = "已激活 → 补到 key"
+                else:
+                    note = "仍未激活 (waitlist)"
+                    code = 403
+            except Exception as e:
+                note = f"{type(e).__name__}: {str(e)[:80]}"
+
         with self.lock:
-            if bal is None:
-                a["status"] = "dead"
-            else:
-                a["balance"] = bal
-                a["fails"] = 0
-                if a.get("status") == "dead":
-                    a["status"] = "active"
+            a["probe_total"] = int(a.get("probe_total") or 0) + 1
+            if ok:
+                a["probe_ok"] = int(a.get("probe_ok") or 0) + 1
+            a["probe_code"] = code
+            a["probe_note"] = note
             a["last_check"] = _now()
+            if ok:
+                a["fails"] = 0
+                if balance is not None:
+                    a["balance"] = balance
+                if a.get("status") in ("dead", "pending"):
+                    a["status"] = "active"
+            elif code in (401, 403) and key:
+                a["status"] = "dead"
             self._rewrite()
-        return {"ok": bal is not None, "balance": bal, "status": a["status"]}
+        return {"ok": ok, "code": code, "note": note,
+                "balance": a.get("balance"), "status": a.get("status")}
 
     def check_all(self, statuses=None, workers: int = 6) -> dict:
         """并发给号做健康检查（面板「刷新全部」）。statuses 可选过滤。"""
@@ -313,8 +371,15 @@ class Pool:
                     self.accounts.append(acct)
                     self._append(acct)
                 added += 1
-                fails = 0
-                log(f"新号入库: {acct['email']} ({acct['api_key'][:16]}…)")
+                if acct.get("status") == "active":
+                    fails = 0
+                    log(f"新号入库: {acct['email']} ({acct['api_key'][:16]}…)")
+                else:
+                    # pending（上游激活满员）：号建出来了但没 key，不算成功，
+                    # 也要计入失败，否则会一路狂建 pending 号停不下来。
+                    fails += 1
+                    log(f"号入库但未激活(pending): {acct['email']} —— 上游放行后"
+                        f"面板「一键刷新所有号」会自动补 key")
                 if progress:
                     progress(added, acct)
             except Exception as e:  # noqa: BLE001
