@@ -10,7 +10,7 @@
 """
 
 BRAND_URL = "https://baipiao.org/"
-BRAND_DESC = "免费 API、公益站、羊毛资源聚合"
+BRAND_DESC = "免费 API、公益站、羊毛资源"
 
 # 结果尾巴（会加在模型答案之后，用分隔线隔开，避免和模型输出混在一起）
 FOOTER = (
