@@ -3,9 +3,12 @@
     GET  /health                探活 + 号池概览
     GET  /v1/models             模型清单
     POST /v1/chat/completions   对话（支持 stream=true）
+    GET  /panel                 号池面板（见 panel.py）
 
 鉴权：Authorization: Bearer <config.api_key>。上游 FutureSearch 的 sk-cho- key
 永远不会暴露给调用方。
+
+白嫖站 · https://baipiao.org/  —— 免费 API / 公益站 / 羊毛资源
 """
 import json
 import threading
