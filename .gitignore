@@ -3,3 +3,7 @@ __pycache__/
 .venv/
 data/
 *.log
+
+# 工具产物，不是项目内容
+.omo/
+.playwright-mcp/
