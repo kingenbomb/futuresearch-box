@@ -18,6 +18,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from . import config
 from .futuresearch import FutureSearchClient, UpstreamError
 from .mailbox import Mailbox
+from .referral import ReferralTree
 from .turnstile import SolveError, TurnstileSolver
 
 
@@ -48,6 +49,36 @@ def _is_backoff(err: str) -> bool:
     return any(h in low for h in _BACKOFF_HINTS)
 
 
+def _do_referral(cfg: dict, client, access_token: str, user_id: str):
+    """注册后：兑上级邀请码 → 生成自己的码。返回 (parent, own)。
+
+    整段「尽力而为」：邀请码只影响**首次订阅折扣**，拿不到也不该让号注册失败。
+    需要 cfg["referral_seed_code"] 非空才启用（空=完全不碰邀请码）。
+    """
+    seed = (cfg.get("referral_seed_code") or "").strip()
+    if not seed:
+        return None, None
+    try:
+        tree = ReferralTree(seed, cfg.get("referral_fanout", 5))
+        parent = tree.next_parent()
+        applied = False
+        why = ""
+        if parent:
+            applied, why = client.apply_referral_code(access_token, parent)
+            log(f"兑上级码 {parent} -> {applied} ({why})")
+        own = client.generate_referral_token(access_token)
+        if own:
+            # 只有真兑上了才认这个父；already_applied / 无效码不算，
+            # 否则会平白吃掉上级码的一个扇出槽位。
+            tree.commit(parent if applied else None, own)
+            log(f"生成自己的码: {own}"
+                + ("  (下一个号可用它当上级)" if applied else "  (未挂上父，仍可作上级)"))
+        return (parent if applied else None), own
+    except Exception as e:  # noqa: BLE001
+        log(f"邀请码流程跳过: {type(e).__name__}: {str(e)[:100]}")
+        return None, None
+
+
 def register_one(cfg: dict, idx: int, client: FutureSearchClient) -> dict:
     """跑完整链路：注册 → 过 Turnstile 激活 → 造 API key。返回账号 dict。"""
     box = Mailbox(cfg).create(idx)      # local 造地址 / vip215 开真实收件箱
@@ -75,6 +106,10 @@ def register_one(cfg: dict, idx: int, client: FutureSearchClient) -> dict:
             client.activate(sess["access_token"], token)
 
             api_key = client.create_api_key(sess["access_token"], user_id, "fsbox")
+
+            # 邀请码：兑上级 → 生成自己的码（生成失败不影响号本身）
+            ref_parent, ref_own = _do_referral(cfg, client, sess["access_token"], user_id)
+
             return {
                 "email": email,
                 "email_source": box.get("source", "local"),
@@ -84,6 +119,8 @@ def register_one(cfg: dict, idx: int, client: FutureSearchClient) -> dict:
                 "balance": 20.0,
                 "status": "active",
                 "fails": 0,
+                "ref_parent": ref_parent,
+                "ref_code": ref_own,
                 "created_at": _now(),
                 "last_used": 0,
             }

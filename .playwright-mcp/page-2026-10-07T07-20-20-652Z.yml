@@ -1,0 +1,312 @@
+- generic [ref=f2e3]:
+  - link "Skip to content" [ref=f2e4] [cursor=pointer]:
+    - /url: "#VPContent"
+  - banner:
+    - generic:
+      - generic:
+        - generic:
+          - link "AgentRouter 接入说明" [ref=f2e6] [cursor=pointer]:
+            - /url: /docs/
+          - generic [ref=f2e8]:
+            - button "Search" [ref=f2e11] [cursor=pointer]:
+              - generic [ref=f2e15]:
+                - generic [ref=f2e16]: Ctrl
+                - generic [ref=f2e17]: K
+            - navigation "Main Navigation" [ref=f2e18]:
+              - link "首页" [ref=f2e20] [cursor=pointer]:
+                - /url: /docs/
+              - link "注册 AgentRouter" [ref=f2e22] [cursor=pointer]:
+                - /url: https://agentrouter.org/register?aff=IPN5
+              - link "在 X 上关注我" [ref=f2e24] [cursor=pointer]:
+                - /url: https://x.com/agentrouter
+              - link "快速开始" [ref=f2e26] [cursor=pointer]:
+                - /url: /docs/claude-code.html
+              - button "工具指南" [ref=f2e29] [cursor=pointer]
+            - button "extra navigation" [ref=f2e34] [cursor=pointer]
+  - button "On this page" [ref=f2e39] [cursor=pointer]
+  - complementary [ref=f2e41]:
+    - navigation "Sidebar Navigation" [ref=f2e43]:
+      - generic [ref=f2e46]:
+        - button [ref=f2e47]:
+          - heading "快速开始" [level=2] [ref=f2e49]
+        - generic [ref=f2e50]:
+          - generic [ref=f2e51]:
+            - button [ref=f2e52] [cursor=pointer]:
+              - heading "一、VS Code 插件型" [level=3] [ref=f2e54]
+              - button "toggle section" [ref=f2e55]
+            - generic [ref=f2e57]:
+              - link [ref=f2e61] [cursor=pointer]:
+                - /url: /docs/cline.html
+                - paragraph [ref=f2e62]: 在 Cline 中使用
+              - link [ref=f2e66] [cursor=pointer]:
+                - /url: /docs/roocode.html
+                - paragraph [ref=f2e67]: 在 Roo Code 中使用
+              - link [ref=f2e71] [cursor=pointer]:
+                - /url: /docs/kilocode.html
+                - paragraph [ref=f2e72]: 在 Kilo Code 中使用
+              - link [ref=f2e76] [cursor=pointer]:
+                - /url: /docs/claude-code-vscode.html
+                - paragraph [ref=f2e77]: 在 Claude Code 中使用
+          - generic [ref=f2e78]:
+            - button [ref=f2e79] [cursor=pointer]:
+              - heading "二、CLI / 终端类" [level=3] [ref=f2e81]
+              - button "toggle section" [ref=f2e82]
+            - generic [ref=f2e84]:
+              - link [ref=f2e88] [cursor=pointer]:
+                - /url: /docs/claude-code.html
+                - paragraph [ref=f2e89]: 在 Claude Code 中使用
+              - link [ref=f2e93] [cursor=pointer]:
+                - /url: /docs/codex.html
+                - paragraph [ref=f2e94]: 在 Codex 中使用
+              - link [ref=f2e98] [cursor=pointer]:
+                - /url: /docs/qwencode.html
+                - paragraph [ref=f2e99]: 在 Qwen Code 中使用
+              - link [ref=f2e103] [cursor=pointer]:
+                - /url: /docs/opencode.html
+                - paragraph [ref=f2e104]: 在 OpenCode 中使用
+              - link [ref=f2e108] [cursor=pointer]:
+                - /url: /docs/openclaw.html
+                - paragraph [ref=f2e109]: 在 OpenClaw 中使用
+              - link [ref=f2e113] [cursor=pointer]:
+                - /url: /docs/hermes.html
+                - paragraph [ref=f2e114]: 在 Hermes Agent 中使用
+              - link [ref=f2e118] [cursor=pointer]:
+                - /url: /docs/pi.html
+                - paragraph [ref=f2e119]: 在 Pi 中使用
+              - link [ref=f2e123] [cursor=pointer]:
+                - /url: /docs/crush.html
+                - paragraph [ref=f2e124]: 在 Crush 中使用
+          - generic [ref=f2e125]:
+            - button [ref=f2e126] [cursor=pointer]:
+              - heading "三、IDE / 桌面端型" [level=3] [ref=f2e128]
+              - button "toggle section" [ref=f2e129]
+            - generic [ref=f2e131]:
+              - link [ref=f2e135] [cursor=pointer]:
+                - /url: /docs/claude-app.html
+                - paragraph [ref=f2e136]: 在 Claude App 中使用
+              - link [ref=f2e140] [cursor=pointer]:
+                - /url: /docs/trae.html
+                - paragraph [ref=f2e141]: 在 Trae 中使用
+              - link [ref=f2e145] [cursor=pointer]:
+                - /url: /docs/zcode.html
+                - paragraph [ref=f2e146]: 在 ZCode 中使用
+              - link [ref=f2e150] [cursor=pointer]:
+                - /url: /docs/workbuddy.html
+                - paragraph [ref=f2e151]: 在 WorkBuddy 中使用
+              - link [ref=f2e155] [cursor=pointer]:
+                - /url: /docs/craft-agents.html
+                - paragraph [ref=f2e156]: 在 Craft Agents 中使用
+      - generic [ref=f2e158]:
+        - button [ref=f2e159]:
+          - heading "使用规范" [level=2] [ref=f2e161]
+        - link [ref=f2e166] [cursor=pointer]:
+          - /url: /docs/terms.html
+          - paragraph [ref=f2e167]: 使用规范 / Terms of Use
+  - generic [ref=f2e172]:
+    - main [ref=f2e173]:
+      - generic [ref=f2e175]:
+        - heading [level=1] [ref=f2e176]:
+          - text: 在 OpenCode 中使用 AgentRouter
+          - link "Permalink to \"在 OpenCode 中使用 AgentRouter\"" [ref=f2e177] [cursor=pointer]:
+            - /url: "#在-opencode-中使用-agentrouter"
+            - text: "#"
+        - paragraph [ref=f2e178]:
+          - text: OpenCode 通过
+          - code [ref=f2e179]: ~/.config/opencode/opencode.json
+          - text: 配置第三方 provider 接入 AgentRouter，支持在
+          - code [ref=f2e180]: provider
+          - text: 下创建多个 provider，并在每个 provider 下添加多个 model。
+        - heading [level=2] [ref=f2e181]:
+          - text: 安装与配置步骤
+          - link "Permalink to \"安装与配置步骤\"" [ref=f2e182] [cursor=pointer]:
+            - /url: "#安装与配置步骤"
+            - text: "#"
+        - heading [level=3] [ref=f2e183]:
+          - text: 1. 安装 OpenCode
+          - link "Permalink to \"1. 安装 OpenCode\"" [ref=f2e184] [cursor=pointer]:
+            - /url: "#_1-安装-opencode"
+            - text: "#"
+        - generic [ref=f2e185]:
+          - button "Copy Code" [ref=f2e186] [cursor=pointer]
+          - generic [ref=f2e187]: bash
+          - code [ref=f2e189]:
+            - generic [ref=f2e190]: curl -fsSL https://opencode.ai/install | bash
+            - generic [ref=f2e191]: npm install -g opencode-ai
+            - generic [ref=f2e192]: brew install anomalyco/tap/opencode
+        - heading [level=3] [ref=f2e193]:
+          - text: 2. 检查安装结果
+          - link "Permalink to \"2. 检查安装结果\"" [ref=f2e194] [cursor=pointer]:
+            - /url: "#_2-检查安装结果"
+            - text: "#"
+        - generic [ref=f2e195]:
+          - button "Copy Code" [ref=f2e196] [cursor=pointer]
+          - generic [ref=f2e197]: bash
+          - code [ref=f2e199]:
+            - generic [ref=f2e200]: opencode --version
+        - heading [level=3] [ref=f2e201]:
+          - text: 3. 创建配置目录，写入第三方 provider
+          - link "Permalink to \"3. 创建配置目录，写入第三方 provider\"" [ref=f2e202] [cursor=pointer]:
+            - /url: "#_3-创建配置目录-写入第三方-provider"
+            - text: "#"
+        - list [ref=f2e203]:
+          - listitem [ref=f2e204]:
+            - text: 创建
+            - code [ref=f2e205]: ~/.config/opencode
+            - text: 目录，并在该目录下创建
+            - code [ref=f2e206]: opencode.json
+            - text: 。
+          - listitem [ref=f2e207]:
+            - strong [ref=f2e208]: 注意
+            - text: ：API Key 在配置完参数后，启动 opencode 时进行输入。
+          - listitem [ref=f2e209]:
+            - text: OpenCode 支持在
+            - code [ref=f2e210]: provider
+            - text: 下创建多个 provider，并支持在 provider 下添加多个 model。
+        - paragraph [ref=f2e211]: 字段说明：
+        - table [ref=f2e212]:
+          - rowgroup [ref=f2e213]:
+            - row [ref=f2e214]:
+              - columnheader "配置项" [ref=f2e215]
+              - columnheader "填写内容 / 说明" [ref=f2e216]
+          - rowgroup [ref=f2e217]:
+            - row [ref=f2e218]:
+              - cell [ref=f2e219]:
+                - code [ref=f2e220]: npm
+              - cell [ref=f2e221]:
+                - text: 指定
+                - strong [ref=f2e222]: Vercel AI SDK 的 provider 包
+                - text: ，决定
+                - strong [ref=f2e223]: 请求体格式、鉴权头、接口路径
+                - text: ：-
+                - code [ref=f2e224]: "@ai-sdk/anthropic"
+                - text: → Anthropic 原生协议：
+                - code [ref=f2e225]: POST /v1/messages
+                - text: ，鉴权头
+                - code [ref=f2e226]: x-api-key
+                - text: ，请求体是 Claude 结构-
+                - code [ref=f2e227]: "@ai-sdk/openai-compatible"
+                - text: → OpenAI chat 协议：
+                - code [ref=f2e228]: POST /v1/chat/completions
+                - text: ，
+                - code [ref=f2e229]: "Authorization: Bearer xxx"
+                - text: "-"
+                - code [ref=f2e230]: "@ai-sdk/openai"
+                - text: → OpenAI Responses 协议：
+                - code [ref=f2e231]: POST /v1/responses
+            - row [ref=f2e232]:
+              - cell [ref=f2e233]:
+                - code [ref=f2e234]: name
+              - cell "对外展示 provider 名称" [ref=f2e235]
+            - row [ref=f2e236]:
+              - cell [ref=f2e237]:
+                - code [ref=f2e238]: options.baseURL
+              - cell [ref=f2e239]:
+                - code [ref=f2e240]: https://agentrouter.org
+                - text: Claude Opus 系列优先使用 Anthropic + Use custom base URL，Base URL 不加
+                - code [ref=f2e241]: /v1
+                - text: ；其他通用模型使用 OpenAI Compatible，Base URL 加
+                - code [ref=f2e242]: /v1
+                - text: 。两类方法并行，不要混用
+            - row [ref=f2e243]:
+              - cell [ref=f2e244]:
+                - code [ref=f2e245]: models
+              - cell [ref=f2e246]:
+                - text: 支持的模型是动态调整的，会随资源情况上下线，请始终以
+                - link "https://ps.air-outer.com/console/personal" [ref=f2e247] [cursor=pointer]:
+                  - /url: https://ps.air-outer.com/console/personal
+                - text: 展示的列表为准。Agent Router 当前提供以下模型：
+                - strong [ref=f2e248]: OpenAI
+                - text: ：
+                - code [ref=f2e249]: gpt-5.6-sol
+                - text: 、
+                - code [ref=f2e250]: gpt-6-astra
+                - strong [ref=f2e251]: Anthropic
+                - text: ：
+                - code [ref=f2e252]: claude-opus-5
+                - text: 、
+                - code [ref=f2e253]: claude-opus-4-8
+                - text: 支持 OpenAI 及 Anthropic
+                - strong [ref=f2e254]: 智谱
+                - text: ：
+                - code [ref=f2e255]: glm-5.3
+                - text: 支持 OpenAI 及 Anthropic
+                - strong [ref=f2e256]: Deepseek
+                - text: ：
+                - code [ref=f2e257]: deepseek-v4-flash
+                - text: 支持 OpenAI 及 Anthropic各模型支持端点可参考
+                - link "https://ps.air-outer.com/pricing" [ref=f2e258] [cursor=pointer]:
+                  - /url: https://ps.air-outer.com/pricing
+                - text: 。模型名必须与定价页完全一致（含连字符写法）。填错或填已下线的模型会直接报 503 无可用渠道。
+            - row [ref=f2e259]:
+              - cell [ref=f2e260]:
+                - code [ref=f2e261]: model
+              - cell "默认会话初始模型" [ref=f2e262]
+        - paragraph [ref=f2e263]: 参考示例：
+        - generic [ref=f2e264]:
+          - button "Copy Code" [ref=f2e265] [cursor=pointer]
+          - generic [ref=f2e266]: bash
+          - code [ref=f2e268]:
+            - generic [ref=f2e269]: "# 创建目录"
+            - generic [ref=f2e270]: mkdir -p ~/.config/opencode
+            - generic [ref=f2e271]: "# 写入配置"
+            - generic [ref=f2e272]: cat > ~/.config/opencode/opencode.json <<'OPENCODESETTINGS'
+            - generic [ref=f2e273]: "{"
+            - generic [ref=f2e274]: "\"$schema\": \"https://opencode.ai/config.json\","
+            - generic [ref=f2e275]: "\"provider\": {"
+            - generic [ref=f2e276]: "\"AgentRouter-openai-gateway\": {"
+            - generic [ref=f2e277]: "\"npm\": \"@ai-sdk/openai-compatible\","
+            - generic [ref=f2e278]: "\"name\": \"AgentRouter-openai-gateway\","
+            - generic [ref=f2e279]: "\"options\": {"
+            - generic [ref=f2e280]: "\"baseURL\": \"https://agentrouter.org/v1\""
+            - generic [ref=f2e281]: "},"
+            - generic [ref=f2e282]: "\"models\": {"
+            - generic [ref=f2e283]: "\"deepseek-v4-flash\": {"
+            - generic [ref=f2e284]: "\"name\": \"DeepSeek V4 Flash\""
+            - generic [ref=f2e285]: "},"
+            - generic [ref=f2e286]: "\"glm-5.3\": {"
+            - generic [ref=f2e287]: "\"name\": \"GLM 5.3\""
+            - generic [ref=f2e288]: "}"
+            - generic [ref=f2e289]: "}"
+            - generic [ref=f2e290]: "},"
+            - generic [ref=f2e291]: "\"AgentRouter-anthropic-gateway\": {"
+            - generic [ref=f2e292]: "\"npm\": \"@ai-sdk/anthropic\","
+            - generic [ref=f2e293]: "\"name\": \"AgentRouter-anthropic-gateway\","
+            - generic [ref=f2e294]: "\"options\": {"
+            - generic [ref=f2e295]: "\"baseURL\": \"https://agentrouter.org\""
+            - generic [ref=f2e296]: "},"
+            - generic [ref=f2e297]: "\"models\": {"
+            - generic [ref=f2e298]: "\"claude-opus-5\": {"
+            - generic [ref=f2e299]: "\"name\": \"Claude Opus 5\""
+            - generic [ref=f2e300]: "},"
+            - generic [ref=f2e301]: "\"claude-opus-4-8\": {"
+            - generic [ref=f2e302]: "\"name\": \"Claude Opus 4-8\""
+            - generic [ref=f2e303]: "}"
+            - generic [ref=f2e304]: "}"
+            - generic [ref=f2e305]: "}"
+            - generic [ref=f2e306]: "},"
+            - generic [ref=f2e307]: "\"model\": \"AgentRouter-openai-gateway/deepseek-v4-flash\""
+            - generic [ref=f2e308]: "}"
+            - generic [ref=f2e309]: OPENCODESETTINGS
+        - heading [level=3] [ref=f2e310]:
+          - text: 4. 测试与验证
+          - link "Permalink to \"4. 测试与验证\"" [ref=f2e311] [cursor=pointer]:
+            - /url: "#_4-测试与验证"
+            - text: "#"
+        - generic [ref=f2e312]:
+          - button "Copy Code" [ref=f2e313] [cursor=pointer]
+          - generic [ref=f2e314]: bash
+          - code [ref=f2e316]:
+            - generic [ref=f2e317]: "# 启动 opencode"
+            - generic [ref=f2e318]: opencode
+            - generic [ref=f2e319]: "# 输入命令查看模型列表"
+            - generic [ref=f2e320]: /model
+    - contentinfo [ref=f2e321]:
+      - navigation "Pager" [ref=f2e322]:
+        - link "Previous page 在 Qwen Code 中使用" [ref=f2e325] [cursor=pointer]:
+          - /url: /docs/qwencode.html
+          - generic [ref=f2e326]: Previous page
+          - generic [ref=f2e327]: 在 Qwen Code 中使用
+        - link "Next page 在 OpenClaw 中使用" [ref=f2e329] [cursor=pointer]:
+          - /url: /docs/openclaw.html
+          - generic [ref=f2e330]: Next page
+          - generic [ref=f2e331]: 在 OpenClaw 中使用

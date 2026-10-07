@@ -120,6 +120,46 @@ class FutureSearchClient:
                                 r.status_code, code)
         return status
 
+    # ---------- 邀请码（Supabase RPC） ----------
+
+    def _rpc(self, name: str, access_token: str, payload: dict):
+        r = self.s.post(f"{config.SUPABASE_URL}/rest/v1/rpc/{name}",
+                        headers={"apikey": config.SUPABASE_ANON_KEY,
+                                 "Authorization": f"Bearer {access_token}",
+                                 "Content-Type": "application/json"},
+                        json=payload, timeout=self.timeout)
+        try:
+            return r.status_code, (r.json() if r.content else None)
+        except Exception:
+            return r.status_code, {"_raw": (r.text or "")[:160]}
+
+    def can_be_referrer(self, access_token: str, account_id: str) -> bool:
+        st, d = self._rpc("account_can_be_referrer", access_token,
+                          {"p_account_id": account_id})
+        return st == 200 and d is True
+
+    def generate_referral_token(self, access_token: str) -> str | None:
+        """生成本号的邀请码。同一个号可以反复生成，每次返回一个新码。"""
+        st, d = self._rpc("generate_referral_token", access_token, {"p_metadata": {}})
+        if st == 200 and isinstance(d, dict):
+            return d.get("token")
+        return None
+
+    def apply_referral_code(self, access_token: str, code: str) -> tuple[bool, str]:
+        """用别人的邀请码。返回 (是否成功, 说明)。
+
+        注意上游的判定顺序：**一旦兑过，任何码都返回 already_applied**（连无效码
+        也是），所以「已兑过」会盖掉「码无效」。兑之前无效码才是 400 invalid。
+        """
+        st, d = self._rpc("apply_referral_code", access_token, {"p_token": code})
+        if isinstance(d, dict) and d.get("applied") is True:
+            return True, "applied"
+        if isinstance(d, dict) and d.get("reason"):
+            return False, str(d["reason"])
+        if st == 400 and isinstance(d, dict):
+            return False, str(d.get("message") or "invalid")[:80]
+        return False, f"HTTP {st}"
+
     def create_api_key(self, access_token: str, account_id: str, name: str) -> str:
         r = self.s.post(
             f"{config.APP_BASE}/app/api/api-keys/create",

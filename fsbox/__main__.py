@@ -168,6 +168,35 @@ def cmd_models(args, cfg):
     return 0
 
 
+def cmd_referrals(args, cfg):
+    """看邀请码树：多少码、铺到第几层、哪些还能当上级。"""
+    from .referral import ReferralTree
+    seed = (cfg.get("referral_seed_code") or "").strip()
+    _banner(cfg)
+    if not seed:
+        print("  未启用：config.json 里 referral_seed_code 还是空的。")
+        print("  填上顶层种子码（比如 N55DhsZUV2Mo）后，注册的号会自动")
+        print("  兑上级码 → 生成自己的码 → 成为下批号的上级。")
+        return 0
+    tree = ReferralTree(seed, cfg.get("referral_fanout", 5))
+    st = tree.stats()
+    print(f"  种子码   : {seed}")
+    print(f"  扇出上限 : {tree.fanout} 次/码")
+    print(f"  码总数   : {st['codes']}  可用作上级: {st['available']}")
+    print(f"  已用槽位 : {st['used_slots']}")
+    print(f"  层级分布 : {st['by_level']}")
+    print()
+    print("  ── 树 ──")
+    for code in tree.order:
+        n = tree.nodes[code]
+        parent = n.get("parent") or "(种子)"
+        mark = "★" if n.get("seed") else " "
+        print(f"   {mark} {code:<16} ← {parent:<16} 已带 {n['used']}/{tree.fanout}")
+    print()
+    print("  ★ = 种子码。下一批号的上级按 BFS 选：先用满上层，再铺下层。")
+    return 0
+
+
 def main(argv=None):
     # Windows 控制台默认 GBK，打印中文/emoji 会 UnicodeEncodeError。
     # 统一重编码成 UTF-8（中文 Windows + chcp 936 下直接跑 main.py 也不会崩）。
@@ -189,6 +218,8 @@ def main(argv=None):
     p_st.set_defaults(fn=cmd_status)
     p_bs = sub.add_parser("bootstrap", help="交互式：问注册数量 → 带日志注册 → 自动起网关")
     p_bs.set_defaults(fn=cmd_bootstrap)
+    p_rf = sub.add_parser("referrals", help="看邀请码树")
+    p_rf.set_defaults(fn=cmd_referrals)
     p_md = sub.add_parser("models", help="列出/搜索可选的底层模型")
     p_md.add_argument("search", nargs="?", default="",
                       help="关键词过滤，如 opus / gpt / gemini")

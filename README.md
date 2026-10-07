@@ -133,6 +133,46 @@ client.chat.completions.create(model="claude-opus-5.5-max", messages=[...])
 档位后缀推 `iteration_budget`（`_HIGH`→35、`_MAX`→60…），不再发 `effort_level`。
 想手动定就设 `iteration_budget`（0=自动）。
 
+## 邀请码树
+
+填了 `referral_seed_code` 后，每个新号会**自动**跑：**兑换上级码 → 生成自己的码 →
+自己的码成为下一批号的上级**，如此逐层铺开：
+
+```
+种子码 N55DhsZUV2Mo          ← referral_seed_code
+  ├─ 号1  兑种子 → 生成 Grqv5Jyq8fJ8
+  │    └─ 号6  兑 Grqv5Jyq8fJ8 → 生成 49zIBrbIY33l    ← 第 3 层
+  ├─ 号2  兑种子 → 生成 T8C7Z7oXt3z
+  ├─ 号3 …
+  └─ 号5 …
+```
+
+选上级用 **BFS**：一个码最多当 5 次上级（`referral_fanout`），用满才轮到下一层 ——
+所以种子的前 5 个号是兄弟，第 6 个才开始用 gen1 的码。
+
+```bash
+python main.py referrals     # 看整棵树：几层、每个码带过几个号
+```
+
+实测输出：
+
+```
+  码总数   : 7   可用作上级: 6
+  层级分布 : {0: 1, 1: 5, 2: 1}
+
+   ★ N55DhsZUV2Mo     ← (种子)         已带 5/5
+     Grqv5Jyq8fJ8     ← N55DhsZUV2Mo   已带 1/5
+     49zIBrbIY33l     ← Grqv5Jyq8fJ8   已带 0/5
+```
+
+树状态存在 `data/referrals.json`，跨次运行累积。
+
+> ⚠️ **兑到的是「首次订阅折扣券」，不是免费额度** —— 兑完号的 `tier` 仍是 free、
+> `$20` 余额不变，券只在真正订阅时抵扣。邀请方那份还要等对方**付费**才结算，且
+> 官方写明「人工审核防刷、每月限量」。所以这条链**刷不出额度**，只能给将来的订阅省钱。
+>
+> 邀请码整段是「尽力而为」：拿不到不影响号本身注册成功。
+
 ## 邮箱来源
 
 | `email_mode` | 行为 |
@@ -169,6 +209,8 @@ python main.py status             # 看号池现状
 | `email_api_key` | 空 | `vip215` 模式用的 key（`AC-...`） |
 | `register_retries` | 3 | 单个号的重试次数（过码被拒会退避重试） |
 | `register_max_fails` | 3 | 补号时**连续失败几次就停** —— 上游满员/风控时不至于狂刷孤儿号 |
+| `referral_seed_code` | 空 | 顶层种子邀请码；**填了才启用**邀请码树（见上节） |
+| `referral_fanout` | 5 | 一个邀请码最多当几次上级 |
 | `proxy` | 空 | 如 `http://user:pass@host:port`。注册被风控时挂代理换 IP |
 | `chrome_path` | 空 | 空 = 自动找 Chrome |
 

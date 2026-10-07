@@ -1,0 +1,40 @@
+- generic [ref=f1e3]:
+  - link "Skip to content" [ref=f1e4] [cursor=pointer]:
+    - /url: "#VPContent"
+  - banner:
+    - generic:
+      - generic:
+        - generic:
+          - link "AgentRouter 接入说明" [ref=f1e6] [cursor=pointer]:
+            - /url: /docs/
+          - generic [ref=f1e8]:
+            - button "Search" [ref=f1e11] [cursor=pointer]:
+              - generic [ref=f1e15]:
+                - generic [ref=f1e16]: Ctrl
+                - generic [ref=f1e17]: K
+            - navigation "Main Navigation" [ref=f1e18]:
+              - link "首页" [ref=f1e20] [cursor=pointer]:
+                - /url: /docs/
+              - link "注册 AgentRouter" [ref=f1e22] [cursor=pointer]:
+                - /url: https://agentrouter.org/register?aff=IPN5
+              - link "在 X 上关注我" [ref=f1e24] [cursor=pointer]:
+                - /url: https://x.com/agentrouter
+              - link "快速开始" [ref=f1e26] [cursor=pointer]:
+                - /url: /docs/claude-code.html
+              - button "工具指南" [ref=f1e29] [cursor=pointer]
+            - button "extra navigation" [ref=f1e34] [cursor=pointer]
+  - generic [ref=f1e37]:
+    - generic [ref=f1e40]:
+      - heading "AgentRouter" [level=1] [ref=f1e41]
+      - paragraph [ref=f1e43]: AI Coding 公益站
+      - link "开始使用" [ref=f1e46] [cursor=pointer]:
+        - /url: /docs/claude-code.html
+    - generic [ref=f1e49]:
+      - article [ref=f1e52]:
+        - heading "免费使用" [level=2] [ref=f1e53]
+        - paragraph [ref=f1e54]: 我们为开发者提供力所能及的帮助，提供免费额度，助力 AI Coding。
+      - article [ref=f1e57]:
+        - heading "支持 Claude Code、Codex、Gemini Cli 等多款工具" [level=2] [ref=f1e58]
+        - paragraph [ref=f1e59]: 只要是你在用的，我们都支持。
+  - contentinfo [ref=f1e60]:
+    - paragraph [ref=f1e62]: AgentRouter.org
