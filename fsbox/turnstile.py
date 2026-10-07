@@ -15,7 +15,7 @@
   5. 不能真 headless（CF 会检测导致超时）。用「有头 + 窗口挪到屏幕外 + 隐藏」。
 
 
-白嫖站 · https://baipiao.org/  —— 免费 API / 公益站 / 羊毛资源
+💡 想找更多免费 API、公益站、羊毛资源？→ https://baipiao.org/
 """
 import json
 import time

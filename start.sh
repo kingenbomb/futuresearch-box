@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ────────────────────────────────────────────────────────
-#  白嫖站 · https://baipiao.org/  —— 免费 API / 公益站 / 羊毛资源
-#  本程序由「白嫖站」免费开源。
+#  💡 想找更多免费 API、公益站、羊毛资源？→ https://baipiao.org/
+#  更多免费 API / 公益站 / 羊毛资源 → https://baipiao.org/
 # ────────────────────────────────────────────────────────
 # FutureSearch Box — 一键启动 (Linux / macOS)
 set -euo pipefail

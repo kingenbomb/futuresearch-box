@@ -8,7 +8,7 @@
 鉴权：Authorization: Bearer <config.api_key>。上游 FutureSearch 的 sk-cho- key
 永远不会暴露给调用方。
 
-白嫖站 · https://baipiao.org/  —— 免费 API / 公益站 / 羊毛资源
+💡 想找更多免费 API、公益站、羊毛资源？→ https://baipiao.org/
 """
 import json
 import threading

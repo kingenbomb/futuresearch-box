@@ -14,7 +14,7 @@
 存 localStorage）。服务默认只绑 127.0.0.1，但别把它暴露到公网。
 
 
-白嫖站 · https://baipiao.org/  —— 免费 API / 公益站 / 羊毛资源
+💡 想找更多免费 API、公益站、羊毛资源？→ https://baipiao.org/
 """
 
 # 1 积分 = 1 美分（上游只给美元余额，没有独立积分字段；1837≈$18.37 印证此换算）
@@ -110,9 +110,10 @@ _PAGE = r"""<!DOCTYPE html>
 <div id="app"></div>
 <div class="toast" id="toast"></div>
 <footer style="text-align:center;color:#6b7280;font-size:13px;padding:26px 20px 40px">
-  🔗 本程序由 <a href="https://baipiao.org/" target="_blank" rel="noopener"
-     style="color:#2563eb;font-weight:600;text-decoration:none">白嫖站 · baipiao.org</a>
-  免费开源 —— 免费 API / 公益站 / 羊毛资源，都在这里
+  💡 想找更多免费 API、公益站、羊毛资源？去
+  <a href="https://baipiao.org/" target="_blank" rel="noopener"
+     style="color:#2563eb;font-weight:600;text-decoration:none">baipiao.org</a>
+  看看
 </footer>
 <script>
 const $ = s => document.querySelector(s);

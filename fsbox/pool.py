@@ -4,7 +4,7 @@
 检查、补号都收在这里，server 只管 acquire() 要一个能用的号。
 
 
-白嫖站 · https://baipiao.org/  —— 免费 API / 公益站 / 羊毛资源
+💡 想找更多免费 API、公益站、羊毛资源？→ https://baipiao.org/
 """
 import itertools
 import json

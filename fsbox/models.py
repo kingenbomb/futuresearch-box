@@ -13,7 +13,7 @@ model 名 → llm 枚举 的解析器，让客户端用亲民的名字就能选�
 （需要号池里有一个可用 key）。
 
 
-白嫖站 · https://baipiao.org/  —— 免费 API / 公益站 / 羊毛资源
+💡 想找更多免费 API、公益站、羊毛资源？→ https://baipiao.org/
 """
 import json
 import re

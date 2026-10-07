@@ -3,7 +3,7 @@
 首次运行自动生成一份带默认值的 config.json（含随机 API key），
 用户改这个文件即可，不需要读源码。
 
-白嫖站 · https://baipiao.org/  —— 免费 API / 公益站 / 羊毛资源
+💡 想找更多免费 API、公益站、羊毛资源？→ https://baipiao.org/
 """
 import json
 import os

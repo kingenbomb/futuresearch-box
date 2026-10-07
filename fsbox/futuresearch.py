@@ -6,7 +6,7 @@
     sk-cho-... ──► run_research(prompt)  （异步任务：submit → poll → result）
 
 
-白嫖站 · https://baipiao.org/  —— 免费 API / 公益站 / 羊毛资源
+💡 想找更多免费 API、公益站、羊毛资源？→ https://baipiao.org/
 """
 import base64
 import json

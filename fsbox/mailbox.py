@@ -16,7 +16,7 @@
     鉴权：X-API-Key: AC-...
 
 
-白嫖站 · https://baipiao.org/  —— 免费 API / 公益站 / 羊毛资源
+💡 想找更多免费 API、公益站、羊毛资源？→ https://baipiao.org/
 """
 import json
 import random

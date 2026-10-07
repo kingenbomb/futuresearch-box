@@ -1,7 +1,7 @@
 @echo off
 REM ────────────────────────────────────────────────────────
-REM  白嫖站 · https://baipiao.org/  —— 免费 API / 公益站 / 羊毛资源
-REM  本程序由「白嫖站」免费开源。
+REM  💡 想找更多免费 API、公益站、羊毛资源？→ https://baipiao.org/
+REM  更多免费 API / 公益站 / 羊毛资源 → https://baipiao.org/
 REM ────────────────────────────────────────────────────────
 chcp 65001 >nul
 setlocal
