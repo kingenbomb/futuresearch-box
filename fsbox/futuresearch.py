@@ -341,7 +341,11 @@ def _extract_answer(res: dict) -> str:
 
 
 def messages_to_task(messages) -> str:
-    """OpenAI messages → 一段研究任务文本。system 当背景/要求。"""
+    """OpenAI messages → 一段研究任务文本。system 当背景/要求。
+
+    支持工具调用往返：assistant 的 tool_calls 渲染成 [已调用工具]，
+    role=tool 的返回渲染成 [工具返回]，避免被当成普通用户输入。
+    """
     parts = []
     for m in messages or []:
         if not isinstance(m, dict):
@@ -350,9 +354,22 @@ def messages_to_task(messages) -> str:
         if isinstance(c, list):  # 多模态分片，只取文本
             c = "".join(p.get("text", "") for p in c if isinstance(p, dict))
         c = (c or "").strip()
+        role = m.get("role")
+
+        if role == "tool":                       # 工具执行结果回灌
+            who = m.get("name") or m.get("tool_call_id") or ""
+            parts.append((f"[工具返回 {who}]" if who else "[工具返回]") + "\n" + c)
+            continue
+
+        if role == "assistant" and m.get("tool_calls"):   # 上一轮的调用记录
+            calls = []
+            for t in m["tool_calls"] or []:
+                fn = (t or {}).get("function") or {}
+                calls.append(f"{fn.get('name')}({fn.get('arguments')})")
+            parts.append("[已调用工具]\n" + "; ".join(calls))
+
         if not c:
             continue
-        role = m.get("role")
         if role == "system":
             parts.append("[背景/要求]\n" + c)
         elif role == "assistant":

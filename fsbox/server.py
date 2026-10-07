@@ -11,11 +11,13 @@
 💡 想找更多免费 API、公益站、羊毛资源？→ https://baipiao.org/
 """
 import json
+import os
+import socket
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import ad, config, models, panel
+from . import ad, config, models, panel, toolcall
 from .futuresearch import FutureSearchClient, messages_to_task
 from .pool import Pool, log
 
@@ -44,14 +46,26 @@ class Gateway:
                 return acct
         return None
 
-    def chat(self, messages: list, model: str, effort: str | None = None) -> tuple[str, dict]:
-        """跑一次研究任务，返回 (answer, 用量信息)。model 决定底层用哪个模型。"""
+    def chat(self, messages: list, model: str, effort: str | None = None,
+             tools: list | None = None, tool_choice=None) -> dict:
+        """跑一次研究任务，返回 {content, tool_calls, usage}。
+
+        model 决定底层用哪个模型。请求带 tools 时走「提示词协议 + 解析器」：
+        函数清单拼进 task，上游答案若命中调用则转成标准 tool_calls。
+        """
         acct = self.wait_account()
         if not acct:
             raise RuntimeError("号池里没有可用号，且补号失败/超时（看启动日志）")
-        task = ad.augment_task(messages_to_task(messages), self.cfg)  # 提示词广告
+
+        use_tools = bool(tools) and not toolcall.choice_disabled(tool_choice)
+        task = messages_to_task(messages)
+        if use_tools:
+            task = toolcall.build_task(task, tools, tool_choice)
+        else:
+            task = ad.augment_task(task, self.cfg)   # 提示词广告（工具模式跳过，免得污染 JSON）
         if not task:
             raise ValueError("messages 里没有可用文本")
+
         llm = models.resolve(model)   # None = 用上游系统默认
         key = acct["api_key"]
         try:
@@ -66,12 +80,22 @@ class Gateway:
             self.pool.mark_fail(acct, f"{type(e).__name__}: {e}")
             raise
         self.pool.mark_ok(acct)
-        answer = ad.decorate(answer, self.cfg)                        # 结果广告
+
         # 用量按字符粗估（上游不返回 token，这里只为了客户端能显示点什么）
         usage = {"prompt_tokens": max(1, len(task) // 4),
                  "completion_tokens": max(1, len(answer) // 4)}
         usage["total_tokens"] = usage["prompt_tokens"] + usage["completion_tokens"]
-        return answer, usage
+
+        if use_tools:
+            calls = toolcall.parse(answer, tools)
+            if calls:
+                return {"content": None, "tool_calls": toolcall.to_openai(calls),
+                        "usage": usage}
+
+        answer = ad.decorate(answer, self.cfg)                        # 结果广告
+        usage["completion_tokens"] = max(1, len(answer) // 4)
+        usage["total_tokens"] = usage["prompt_tokens"] + usage["completion_tokens"]
+        return {"content": answer, "tool_calls": None, "usage": usage}
 
 
 def make_handler(gw: Gateway):
@@ -89,6 +113,17 @@ def make_handler(gw: Gateway):
                 json.dumps(obj, ensure_ascii=False).encode("utf-8")
             self.send_response(code)
             self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _download(self, filename, obj):
+            """以附件形式返回 JSON（导出用，浏览器会弹下载）。"""
+            body = json.dumps(obj, ensure_ascii=False, indent=2).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Disposition", 'attachment; filename="%s"' % filename)
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
@@ -137,10 +172,37 @@ def make_handler(gw: Gateway):
                 return self._send(200, {"object": "list",
                                         "data": models.list_models()})
             if path == "/panel/api/state":
-                return self._send(200, panel.api_state(gw))
+                # 分页/筛选/排序参数走查询串，交给 panel.api_state 在服务端处理
+                import urllib.parse as _up
+                qs = _up.parse_qs(self.path.split("?", 1)[1]) if "?" in self.path else {}
+                params = {k: v[0] for k, v in qs.items()}
+                return self._send(200, panel.api_state(gw, params))
             if path == "/panel/api/models":
                 return self._send(200, {"object": "list",
                                         "data": models.list_models()})
+            if path == "/panel/api/export":
+                import urllib.parse as _up
+                qs = _up.parse_qs(self.path.split("?", 1)[1]) if "?" in self.path else {}
+                what = (qs.get("what") or ["accounts"])[0]
+                from .invites import InviteTree, seed_tokens
+                from .referral import ReferralTree
+                if what == "invites":
+                    payload = {
+                        "type": "fsbox-invites", "version": 1,
+                        "exported_at": int(time.time()),
+                        "invites": InviteTree(seed_tokens(gw.cfg)).export(),
+                        "referrals": ReferralTree(
+                            gw.cfg.get("referral_seed_code", ""),
+                            gw.cfg.get("referral_fanout", 5)).export(),
+                    }
+                    return self._download("fsbox-invites.json", payload)
+                payload = {
+                    "type": "fsbox-accounts", "version": 1,
+                    "exported_at": int(time.time()),
+                    "count": len(gw.pool.accounts),
+                    "accounts": gw.pool.export_accounts(),
+                }
+                return self._download("fsbox-accounts.json", payload)
             return self._err(404, f"Not found: {self.path}")
 
         def do_POST(self):
@@ -186,6 +248,29 @@ def make_handler(gw: Gateway):
                 threading.Thread(target=gw.pool.rescue_pending, daemon=True).start()
                 pend = sum(1 for a in gw.pool.accounts if a.get("status") == "pending")
                 return self._send(200, {"ok": True, "pending": pend,
+                                        "status": gw.pool.status()})
+            if path == "/panel/api/import":
+                # 导入账号信息 / 邀请码（content 是上传文件的文本）
+                body = self._body()
+                what = (body.get("what") or "accounts").strip()
+                content = body.get("content") or ""
+                if what == "invites":
+                    from .invites import InviteTree, seed_tokens
+                    from .referral import ReferralTree
+                    toks, ref = _parse_invites(content)
+                    a1, s1 = InviteTree(seed_tokens(gw.cfg)).import_tokens(toks)
+                    a2 = s2 = 0
+                    if ref:
+                        rt = ReferralTree(gw.cfg.get("referral_seed_code", ""),
+                                          gw.cfg.get("referral_fanout", 5))
+                        a2, s2 = rt.import_state(ref)
+                    return self._send(200, {
+                        "ok": True, "added": a1 + a2, "skipped": s1 + s2,
+                        "detail": {"tokens_added": a1, "tokens_skipped": s1,
+                                   "referrals_added": a2, "referrals_skipped": s2}})
+                items = _parse_accounts(content)
+                added, skipped = gw.pool.import_accounts(items)
+                return self._send(200, {"ok": True, "added": added, "skipped": skipped,
                                         "status": gw.pool.status()})
             if path == "/panel/api/replenish":
                 if not gw.cfg.get("auto_register", True):
@@ -244,23 +329,35 @@ def make_handler(gw: Gateway):
                     "invalid_request_error")
             messages = body.get("messages") or []
             stream = bool(body.get("stream"))
+            # tools 透传：新的 tools/tool_choice，兼容旧的 functions
+            tools = body.get("tools") or body.get("functions") or None
+            tool_choice = body.get("tool_choice")
 
             try:
-                answer, usage = gw.chat(messages, req_model)
+                res = gw.chat(messages, req_model, tools=tools, tool_choice=tool_choice)
             except Exception as e:
                 return self._err(500, f"{type(e).__name__}: {e}", "api_error")
+
+            content = res["content"]
+            tool_calls = res["tool_calls"]
+            usage = res["usage"]
+            finish = "tool_calls" if tool_calls else "stop"
 
             cid = "chatcmpl-" + str(int(time.time() * 1000))
             created = int(time.time())
             if not stream:
+                msg = {"role": "assistant", "content": content}
+                if tool_calls:
+                    msg["content"] = None
+                    msg["tool_calls"] = tool_calls
                 return self._send(200, {
                     "id": cid, "object": "chat.completion", "created": created,
                     "model": req_model,
-                    "choices": [{"index": 0, "finish_reason": "stop",
-                                 "message": {"role": "assistant", "content": answer}}],
+                    "choices": [{"index": 0, "finish_reason": finish,
+                                 "message": msg}],
                     "usage": usage})
 
-            # 上游不是流式的，这里把结果一次性当成一个 delta 发出去（很多客户端
+            # 上游不是流式的，这里把结果一次性当成 delta 发出去（很多客户端
             # 只认 stream，所以必须给 SSE 外壳）
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream; charset=utf-8")
@@ -277,8 +374,20 @@ def make_handler(gw: Gateway):
                                  "finish_reason": finish}]}, ensure_ascii=False) + "\n\n"
 
             try:
-                self.wfile.write(chunk({"role": "assistant", "content": answer}).encode())
-                self.wfile.write(chunk({}, "stop").encode())
+                if tool_calls:
+                    # 标准 tool_calls 流式分片：每个调用一个 delta，带 index
+                    pieces = [{"role": "assistant", "content": None,
+                               "tool_calls": [{"index": i, "id": tc["id"],
+                                               "type": "function",
+                                               "function": tc["function"]}]}
+                              for i, tc in enumerate(tool_calls)]
+                    for p in pieces:
+                        self.wfile.write(chunk(p).encode())
+                    self.wfile.write(chunk({}, "tool_calls").encode())
+                else:
+                    self.wfile.write(chunk({"role": "assistant",
+                                            "content": content}).encode())
+                    self.wfile.write(chunk({}, "stop").encode())
                 self.wfile.write(b"data: [DONE]\n\n")
                 self.wfile.flush()
             except (BrokenPipeError, ConnectionResetError):
@@ -287,12 +396,33 @@ def make_handler(gw: Gateway):
     return Handler
 
 
+class _SingleBindServer(ThreadingHTTPServer):
+    """禁止端口复用：HTTPserver 默认 allow_reuse_address=1(SO_REUSEADDR)，
+    在 Windows 上这会让**第二个实例也能绑上同一端口** → 两个网关抢一个 8000，
+    请求随机落到其中一个（表现为偶发连接中断）。这里显式独占，第二个实例
+    启动时直接报「端口被占用」而不是悄悄顶掉对方。"""
+
+    daemon_threads = True
+    allow_reuse_address = False
+
+    def server_bind(self):
+        if os.name == "nt":
+            try:
+                self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+            except OSError:
+                pass
+        super().server_bind()
+
+
 def serve(cfg: dict, on_ready=None) -> None:
     """启动服务（阻塞）。on_ready(base_url) 会在监听后回调。"""
     gw = Gateway(cfg)
     host, port = cfg["host"], int(cfg["port"])
-    httpd = ThreadingHTTPServer((host, port), make_handler(gw))
-    httpd.daemon_threads = True
+    try:
+        httpd = _SingleBindServer((host, port), make_handler(gw))
+    except OSError as e:
+        log(f"启动失败：{host}:{port} 已被占用（是不是已经有一个实例在跑？）: {e}")
+        raise SystemExit(1)
 
     base = f"http://{host}:{port}/v1"
     if on_ready:
@@ -319,3 +449,48 @@ def _replenish_loop(gw: Gateway, every: int = 120):
             gw.pool.ensure()
         except Exception as e:  # noqa: BLE001
             log(f"巡检补号异常: {type(e).__name__}: {str(e)[:120]}")
+
+
+def _parse_accounts(content: str) -> list:
+    """宽容解析导入的账号：接受 {accounts:[...]} / 裸数组 / 单对象 / JSONL。"""
+    text = (content or "").strip()
+    if not text:
+        return []
+    try:
+        d = json.loads(text)
+        if isinstance(d, dict) and isinstance(d.get("accounts"), list):
+            return d["accounts"]
+        if isinstance(d, list):
+            return d
+        if isinstance(d, dict):
+            return [d]
+    except Exception:
+        pass
+    out = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            out.append(json.loads(line))
+        except Exception:
+            pass
+    return out
+
+
+def _parse_invites(content: str):
+    """宽容解析邀请码：接受 {invites:[...], referrals:{...}} / 裸数组 / JSONL。"""
+    text = (content or "").strip()
+    if not text:
+        return [], None
+    try:
+        d = json.loads(text)
+        if isinstance(d, list):
+            return [str(x) for x in d], None
+        if isinstance(d, dict):
+            toks = [str(x) for x in (d.get("invites") or [])]
+            return toks, d.get("referrals")
+    except Exception:
+        pass
+    toks = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    return toks, None

@@ -113,6 +113,30 @@ class InviteTree:
             self.minted[key] = int(self.minted.get(key, 0)) + int(n)
             self._save()
 
+    # ---------- 导出 / 导入 ----------
+
+    def export(self) -> list[str]:
+        """导出未用邀请 token 池（备份/迁移用）。"""
+        with self.lock:
+            return list(self.tokens)
+
+    def import_tokens(self, toks) -> tuple[int, int]:
+        """并入外部邀请 token，去重。返回 (新增, 跳过)。"""
+        added = skipped = 0
+        with self.lock:
+            have = set(self.tokens)
+            for t in toks or []:
+                t = str(t).strip() if t is not None else ""
+                if not t or t in have:
+                    skipped += 1
+                    continue
+                self.tokens.append(t)
+                have.add(t)
+                added += 1
+            if added:
+                self._save()
+        return added, skipped
+
     def stats(self) -> dict:
         with self.lock:
             return {"available": len(self.tokens),

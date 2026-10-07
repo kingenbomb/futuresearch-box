@@ -291,6 +291,50 @@ class Pool:
             self._rewrite()
             return True
 
+    # ---------- 导出 / 导入（后台备份、迁移用） ----------
+
+    def export_accounts(self) -> list[dict]:
+        """导出全部账号（深拷贝，含 api_key / password —— 敏感，别外传）。"""
+        with self.lock:
+            return [json.loads(json.dumps(a, ensure_ascii=False)) for a in self.accounts]
+
+    def import_accounts(self, items) -> tuple[int, int]:
+        """把外部账号并入号池，按 email 去重。返回 (新增, 跳过)。
+
+        缺字段的按新号补默认值：有 api_key 记 active，否则 pending。
+        新增的逐条 append 到 accounts.jsonl，追加式、不动已有号。
+        """
+        added = skipped = 0
+        with self.lock:
+            have = {a.get("email") for a in self.accounts}
+            for it in items or []:
+                if not isinstance(it, dict):
+                    skipped += 1
+                    continue
+                email = str(it.get("email") or "").strip()
+                if not email or email in have:
+                    skipped += 1
+                    continue
+                acct = {
+                    "email": email,
+                    "email_source": it.get("email_source", "import"),
+                    "password": it.get("password", ""),
+                    "user_id": it.get("user_id", ""),
+                    "api_key": it.get("api_key", ""),
+                    "balance": it.get("balance"),
+                    "status": it.get("status") or ("active" if it.get("api_key") else "pending"),
+                    "fails": int(it.get("fails") or 0),
+                    "ref_parent": it.get("ref_parent"),
+                    "ref_code": it.get("ref_code"),
+                    "created_at": it.get("created_at") or _now(),
+                    "last_used": it.get("last_used", 0),
+                }
+                self.accounts.append(acct)
+                self._append(acct)
+                have.add(email)
+                added += 1
+        return added, skipped
+
     def check(self, email: str) -> dict:
         """可用性探测（面板「健康检查」）。
 

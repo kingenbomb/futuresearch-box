@@ -99,6 +99,41 @@ class ReferralTree:
                 self.order.append(new_code)
             self._save()
 
+    # ---------- 导出 / 导入 ----------
+
+    def export(self) -> dict:
+        """导出整棵树（备份/迁移用）。"""
+        with self.lock:
+            return {"seed": self.seed, "fanout": self.fanout,
+                    "order": list(self.order),
+                    "nodes": [dict(v) for v in self.nodes.values()]}
+
+    def import_state(self, d) -> tuple[int, int]:
+        """并入外部 referral 树，按 code 去重（已有 code 保留本机计数）。返回 (新增, 跳过)。"""
+        if not isinstance(d, dict):
+            return 0, 0
+        added = skipped = 0
+        with self.lock:
+            for n in (d.get("nodes") or []):
+                code = (n or {}).get("code")
+                if not code:
+                    skipped += 1
+                    continue
+                if code in self.nodes:
+                    skipped += 1
+                    continue
+                node = {"code": code, "used": int(n.get("used") or 0),
+                        "parent": n.get("parent"), "children": int(n.get("children") or 0)}
+                if n.get("seed"):
+                    node["seed"] = True
+                self.nodes[code] = node
+                if code not in self.order:
+                    self.order.append(code)
+                added += 1
+            if added:
+                self._save()
+        return added, skipped
+
     def stats(self) -> dict:
         with self.lock:
             depth = {}
