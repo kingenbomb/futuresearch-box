@@ -50,7 +50,8 @@ DEFAULTS = {
     "email_api_key": "",                # 你自己的 key（X-API-Key: AC-...）
     "password": "Test123456!",          # 统一密码；留空则每号随机
     "register_concurrency": 2,          # 过码服务容量有限，别调太高
-    "register_retries": 3,
+    "register_retries": 3,              # 单个号的重试次数
+    "register_max_fails": 3,            # 补号时连续失败几次就停（防上游满员时狂刷孤儿号）
 
     # ---- 上游调用 ----
     "effort_level": "high",   # 用默认模型时的档位；low 免费但答案过时

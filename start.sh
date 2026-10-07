@@ -22,4 +22,4 @@ fi
 
 echo "[3/3] 启动中... 首次会自动注册账号，请等 1~2 分钟。"
 echo
-exec .venv/bin/python -m fsbox start "$@"
+exec .venv/bin/python -m fsbox bootstrap "$@"

@@ -16,7 +16,22 @@
 **Windows**：双击 `start.bat`
 **Linux / macOS**：`./start.sh`
 
-首次运行会自动建虚拟环境、下载依赖、注册账号（等 1~2 分钟）。起来后控制台会打印：
+脚本自动建虚拟环境、装依赖、检查 Chrome，然后**交互问你注册几个账号**：
+
+```
+  当前号池: 可用 0 个 / 共 0 个
+  每个号自带 $20 额度（effort=high 约 $0.40/次，一号约 50 次）
+
+  要注册几个账号？[回车=默认 5，输 0 = 跳过直接启动] > 5
+
+  开始注册 5 个（每个约 30~60 秒，过 Turnstile 是唯一慢步骤）
+[pool] 新号入库: fs1791…@mailinator.com (sk-cho-…)
+  ...
+  本次新增 5 个
+  号池现状: 可用 5 / 共 5  · 余额合计 $100.0
+```
+
+注册过程**实时打日志**（每个号的尝试/失败/退避都可见）。注册完**网关自动启动**：
 
 ```
   模型名   : futuresearch-deep
@@ -24,7 +39,10 @@
   API Key  : sk-fsbox-xxxxxxxx
 ```
 
-拿这三样东西填进任意 OpenAI 客户端即可。
+拿这三样填进任意 OpenAI 客户端即可。之后不用再手动注册 —— 号池低于下限会自动补。
+
+> 跳过交互直接起服务：`python main.py start`
+> 只补号不起服务：`python main.py register 10`
 
 ## 前置条件
 
@@ -149,6 +167,8 @@ python main.py status             # 看号池现状
 | `include_reasoning` | false | 选具体模型时是否把推理过程带进回答 |
 | `email_mode` | local | `local`=本地造地址 / `vip215`=走 vip.215.im 开真实收件箱 |
 | `email_api_key` | 空 | `vip215` 模式用的 key（`AC-...`） |
+| `register_retries` | 3 | 单个号的重试次数（过码被拒会退避重试） |
+| `register_max_fails` | 3 | 补号时**连续失败几次就停** —— 上游满员/风控时不至于狂刷孤儿号 |
 | `proxy` | 空 | 如 `http://user:pass@host:port`。注册被风控时挂代理换 IP |
 | `chrome_path` | 空 | 空 = 自动找 Chrome |
 
@@ -168,6 +188,8 @@ python main.py status             # 看号池现状
 | 起不来，说没找到 Chrome | 装 Google Chrome（不是 Edge） |
 | 一直补不到号 | 本机 IP 被风控了 —— 在 `config.json` 里挂 `proxy` 换 IP |
 | 日志报 `captcha_failed` | 同上，换 IP；或等一会儿再试 |
+| 日志报 `at_capacity` | 上游激活容量满，不是号坏了 —— 等一阵再补，或换 IP |
+| 补号刷了几次就自己停了 | 正常：连续失败达 `register_max_fails`（默认 3）会停，防止刷孤儿号 |
 | 请求很慢 | 正常，深度研究要几十秒到几分钟 |
 | 返回 500 `号池里没有可用号` | 补号还没完成或全挂了，看日志；先 `python main.py register 3` |
 

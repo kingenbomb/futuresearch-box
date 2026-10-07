@@ -37,9 +37,10 @@ def gen_password(cfg: dict) -> str:
     return "".join(random.choice(alphabet) for _ in range(16)) + "!a9"
 
 
-# 这些错误退避久一点再试（限流 / 过码被拒），别立刻重撞
+# 这些错误退避久一点再试（限流 / 过码被拒 / 上游容量满），别立刻重撞
 _BACKOFF_HINTS = ("rate_limit", "too_many", "over_email_send", "429",
-                  "slow down", "captcha_failed")
+                  "slow down", "captcha_failed",
+                  "at_capacity")   # 上游激活容量满：不是号坏了，缓一缓再试
 
 
 def _is_backoff(err: str) -> bool:
@@ -246,16 +247,26 @@ class Pool:
             return len(self.usable()) < int(self.cfg.get("min_accounts", 2))
 
     def replenish(self, target=None, progress=None) -> int:
-        """注册到 target 个可用号。返回本次新增数。"""
+        """注册到 target 个可用号。返回本次新增数。
+
+        连续失败达上限就停 —— 上游满员/风控时不能无限重试：每次尝试都会先 signup
+        建号，狂试等于刷一堆激活不了的孤儿账号（这个坑真踩过）。
+        """
         cfg = self.cfg
         target = int(target or cfg.get("target_accounts", 5))
         target = min(target, int(cfg.get("max_accounts", 50)))
+        max_fails = int(cfg.get("register_max_fails", 3))
         added = 0
+        fails = 0
         while True:
             with self.lock:
                 have = len(self.usable()) + self._registering
                 total = len(self.accounts)
             if have >= target or total >= int(cfg.get("max_accounts", 50)):
+                break
+            if fails >= max_fails:
+                log(f"连续失败 {fails} 次，停止补号（上游可能满员/风控，"
+                    f"过一会儿再试，或挂 proxy 换 IP）")
                 break
             self._registering += 1
             try:
@@ -265,10 +276,12 @@ class Pool:
                     self.accounts.append(acct)
                     self._append(acct)
                 added += 1
+                fails = 0
                 log(f"新号入库: {acct['email']} ({acct['api_key'][:16]}…)")
                 if progress:
                     progress(added, acct)
             except Exception as e:  # noqa: BLE001
+                fails += 1
                 log(f"补号失败: {type(e).__name__}: {str(e)[:160]}")
             finally:
                 self._registering -= 1

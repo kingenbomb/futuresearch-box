@@ -1,8 +1,11 @@
-"""CLI 入口：python -m fsbox [start|register|status]
+"""CLI 入口：python -m fsbox [bootstrap|start|register|status]
 
-    start     启动 OpenAI 兼容服务，打印 Base URL + API Key（默认）
-    register  先手动补 N 个号（不启动服务）
-    status    看号池现状
+    bootstrap  start.bat 用：交互问注册数量 → 带日志注册 → 自动起网关
+    start      启动 OpenAI 兼容服务，打印 Base URL + API Key
+    register   先手动补 N 个号（不启动服务）
+    status     看号池现状
+
+💡 想找更多免费 API、公益站、羊毛资源？→ https://baipiao.org/
 """
 import argparse
 import sys
@@ -40,6 +43,62 @@ def cmd_start(args, cfg):
         print()
 
     server.serve(cfg, on_ready=ready)
+
+
+def cmd_bootstrap(args, cfg):
+    """start.bat 的入口：交互问注册数量 → 带日志注册 → 自动起网关。"""
+    from . import ad
+    _banner(cfg)
+    print(ad.banner())
+    print("-" * 62)
+
+    pool = Pool(cfg)
+    have = len(pool.usable())
+    print(f"  当前号池: 可用 {have} 个 / 共 {len(pool.accounts)} 个")
+    print(f"  每个号自带 $20 额度（effort=high 约 $0.40/次，一号约 50 次）")
+    print()
+
+    raw = ""
+    try:
+        raw = input("  要注册几个账号？[回车=默认 {}，输 0 = 跳过直接启动] > "
+                    .format(cfg.get("target_accounts", 5))).strip()
+    except (EOFError, KeyboardInterrupt):
+        print("\n  已取消。")
+        return 1
+
+    if raw == "":
+        want = int(cfg.get("target_accounts", 5))
+    else:
+        try:
+            want = max(0, int(raw))
+        except ValueError:
+            print("  不是数字，按跳过处理。")
+            want = 0
+
+    if want > 0:
+        cap = int(cfg.get("max_accounts", 50))
+        if len(pool.accounts) + want > cap:
+            want = max(0, cap - len(pool.accounts))
+            print(f"  超出号池上限 {cap}，本次只注册 {want} 个。")
+        print()
+        print(f"  开始注册 {want} 个（每个约 30~60 秒，过 Turnstile 是唯一慢步骤）")
+        print(f"  日志前缀 [pool] 是单个号的过程，失败会自动退避重试。")
+        print("-" * 62)
+        try:
+            added = pool.replenish(target=have + want)
+        except KeyboardInterrupt:
+            print("\n  注册被中断，已成功的号都保留在号池里。")
+            added = 0
+        print("-" * 62)
+        print(f"  本次新增 {added} 个")
+
+    st = Pool(cfg).status()      # 重新读盘，拿最新状态
+    print(f"  号池现状: 可用 {st['usable']} / 共 {st['total']}"
+          f"  · 余额合计 ${st['balance_usd']}")
+    print()
+
+    # 网关自动启动（不阻塞在这里，直接进 serve）
+    return cmd_start(args, cfg)
 
 
 def cmd_register(args, cfg):
@@ -110,6 +169,14 @@ def cmd_models(args, cfg):
 
 
 def main(argv=None):
+    # Windows 控制台默认 GBK，打印中文/emoji 会 UnicodeEncodeError。
+    # 统一重编码成 UTF-8（中文 Windows + chcp 936 下直接跑 main.py 也不会崩）。
+    for _s in (sys.stdout, sys.stderr):
+        try:
+            _s.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
     ap = argparse.ArgumentParser(prog="fsbox", description="FutureSearch Box")
     sub = ap.add_subparsers(dest="cmd")
     p_start = sub.add_parser("start", help="启动服务（默认）")
@@ -120,6 +187,8 @@ def main(argv=None):
     p_reg.set_defaults(fn=cmd_register)
     p_st = sub.add_parser("status", help="号池现状")
     p_st.set_defaults(fn=cmd_status)
+    p_bs = sub.add_parser("bootstrap", help="交互式：问注册数量 → 带日志注册 → 自动起网关")
+    p_bs.set_defaults(fn=cmd_bootstrap)
     p_md = sub.add_parser("models", help="列出/搜索可选的底层模型")
     p_md.add_argument("search", nargs="?", default="",
                       help="关键词过滤，如 opus / gpt / gemini")

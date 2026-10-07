@@ -39,7 +39,10 @@ def _err(resp) -> tuple[str, str]:
         d = resp.json()
     except Exception:
         return "?", (resp.text or "")[:140]
-    code = str(d.get("error_code") or d.get("code") or d.get("error") or "?")
+    # 有 200 但业务失败的情况（如 activate 返回 {"status":"at_capacity"}），
+    # status 就是「错误码」，别让它掉进 "?" 看不出来。
+    code = str(d.get("error_code") or d.get("code") or d.get("error")
+               or d.get("status") or "?")
     msg = d.get("msg") or d.get("message") or d.get("error_description") \
         or d.get("detail") or json.dumps(d, ensure_ascii=False)[:140]
     return code, str(msg)[:160]

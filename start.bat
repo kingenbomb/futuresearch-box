@@ -75,9 +75,9 @@ if errorlevel 1 (
 )
 
 echo.
-echo 启动中... 首次会自动注册账号, 请耐心等 1~2 分钟。
+echo 环境就绪。接下来会让你选注册几个账号，然后自动启动网关。
 echo.
-"%VENV%" -m fsbox start %*
+"%VENV%" -m fsbox bootstrap %*
 echo.
 echo 服务已退出。
 pause
