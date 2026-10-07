@@ -103,6 +103,13 @@ _PAGE = r"""<!DOCTYPE html>
   <h1>FutureSearch Box</h1>
   <span class="stat" id="s1">—</span>
   <span class="spacer"></span>
+  <span class="stat">档位</span>
+  <select id="effort" title="走默认模型时的 effort_level；选具体底层模型时改用 iteration_budget">
+    <option value="low">low（免费/快）</option>
+    <option value="medium">medium</option>
+    <option value="high">high（带引用，约$0.40/次）</option>
+  </select>
+  <button id="btn-rescue" title="用邀请 token 把 pending(waitlist) 号激活 + 补 key">救援 pending</button>
   <span class="stat">补号</span>
   <input id="reg-n" type="number" min="1" max="50" value="5" style="width:74px">
   <span class="stat">个</span>
@@ -249,7 +256,11 @@ async function load(){
   const p = d.pool;
   $('#s1').innerHTML = '可用 <b>' + p.usable + '</b> / 共 <b>' + p.total
     + '</b> · 余额合计 <b>$' + p.balance_usd + '</b>'
-    + (p.registering ? ' · 补号中 <b>' + p.registering + '</b>' : '');
+    + (p.registering ? ' · 补号中 <b>' + p.registering + '</b>' : '')
+    + (d.pending ? ' · <b style="color:#92400e">pending ' + d.pending + '</b>' : '')
+    + (d.invites_available ? ' · 邀请池 <b>' + d.invites_available + '</b>' : '');
+  if (d.effort_level) $('#effort').value = d.effort_level;
+  $('#btn-rescue').textContent = d.pending ? ('救援 pending (' + d.pending + ')') : '救援 pending';
   if (d.n_models) $('#btn-models').textContent = '可选模型 (' + d.n_models + ')';
   render();
 }
@@ -281,6 +292,28 @@ async function act(kind, email){
 }
 
 $('#btn-refresh').onclick = load;
+
+/* ---- 运行时配置：档位（effort_level）---- */
+$('#effort').onchange = async () => {
+  const v = $('#effort').value;
+  try{
+    await api('/panel/api/config', {method:'POST', headers:{'Content-Type':'application/json'},
+                                    body: JSON.stringify({effort_level: v})});
+    toast('档位已设为 ' + v);
+  }catch(e){ toast(String(e.message || e)); load(); }
+};
+
+/* ---- 救援：用邀请 token 把 pending 号激活 + 补 key ---- */
+$('#btn-rescue').onclick = async () => {
+  const b = $('#btn-rescue');
+  b.disabled = true; b.textContent = '救援中…';
+  let r;
+  try{ r = await api('/panel/api/rescue', {method:'POST'}); }
+  catch(e){ toast(String(e.message || e)); b.disabled = false; b.textContent = '救援 pending'; return; }
+  toast(r.pending ? ('开始救援 ' + r.pending + ' 个 pending 号') : '没有 pending 号');
+  const t = setInterval(load, 3000);
+  setTimeout(()=>{ clearInterval(t); b.disabled = false; b.textContent = '救援 pending'; load(); }, 90000);
+};
 
 /* ---- 可视化批量注册 ---- */
 $('#btn-add').onclick = async () => {
@@ -365,6 +398,11 @@ def page() -> bytes:
 def api_state(gw) -> dict:
     """号池 + 配置概览（面板用）。"""
     from . import models
+    try:
+        from .invites import InviteTree, seed_tokens
+        invites_available = InviteTree(seed_tokens(gw.cfg)).available()
+    except Exception:
+        invites_available = 0
     accts = sorted(gw.pool.accounts,
                    key=lambda a: (a.get("status") not in ("active", "pending"),
                                   -float(a.get("balance") or 0)))
@@ -373,6 +411,11 @@ def api_state(gw) -> dict:
         "model": gw.model,
         "n_models": len(models.list_models()),
         "credits_per_dollar": CREDITS_PER_DOLLAR,
+        "effort_level": gw.cfg.get("effort_level", "high"),
+        "iteration_budget": int(gw.cfg.get("iteration_budget") or 0),
+        "include_reasoning": bool(gw.cfg.get("include_reasoning")),
+        "pending": sum(1 for a in gw.pool.accounts if a.get("status") == "pending"),
+        "invites_available": invites_available,
         "accounts": [{
             "email": a.get("email"),
             "user_id": a.get("user_id"),

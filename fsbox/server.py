@@ -154,6 +154,39 @@ def make_handler(gw: Gateway):
         def _panel_post(self, path):
             # /panel/api/accounts/{email}/{action}  |  /panel/api/replenish
             import urllib.parse as _up
+            if path == "/panel/api/config":
+                # 面板改运行时配置（档位 / 迭代预算 / 是否带推理），持久化到 config.json。
+                # 注意：effort_level 只在「用默认模型」时生效；选具体底层模型时看 iteration_budget。
+                body = self._body()
+                changed = {}
+                if "effort_level" in body:
+                    v = str(body["effort_level"]).strip().lower()
+                    if v in ("low", "medium", "high"):
+                        gw.cfg["effort_level"] = v
+                        changed["effort_level"] = v
+                if "iteration_budget" in body:
+                    try:
+                        v = max(0, min(100, int(body["iteration_budget"])))
+                        gw.cfg["iteration_budget"] = v
+                        changed["iteration_budget"] = v
+                    except (TypeError, ValueError):
+                        pass
+                if "include_reasoning" in body:
+                    v = bool(body["include_reasoning"])
+                    gw.cfg["include_reasoning"] = v
+                    changed["include_reasoning"] = v
+                if changed:
+                    try:
+                        config.save(gw.cfg)
+                    except Exception as e:  # noqa: BLE001
+                        log(f"配置持久化失败: {e}")
+                return self._send(200, {"ok": True, "changed": changed})
+            if path == "/panel/api/rescue":
+                # 后台跑：用邀请 token 把 pending(waitlist) 号激活 + 补 key（可耗时）
+                threading.Thread(target=gw.pool.rescue_pending, daemon=True).start()
+                pend = sum(1 for a in gw.pool.accounts if a.get("status") == "pending")
+                return self._send(200, {"ok": True, "pending": pend,
+                                        "status": gw.pool.status()})
             if path == "/panel/api/replenish":
                 if not gw.cfg.get("auto_register", True):
                     gw.cfg["auto_register"] = True    # 手动补号时临时允许
