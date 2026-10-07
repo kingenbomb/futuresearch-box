@@ -88,6 +88,14 @@ _PAGE = r"""<!DOCTYPE html>
   .login input{width:100%;padding:9px 11px;border-radius:8px;font:inherit}
   footer{text-align:center;color:var(--mut);font-size:13px;padding:22px}
   footer a{color:var(--brand);font-weight:600;text-decoration:none}
+  .models{background:#fff;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .mhead{display:flex;align-items:center;gap:10px;padding:11px 14px;background:#f9fafb;
+         border-bottom:1px solid var(--line);font-size:13px;flex-wrap:wrap}
+  .mlist{max-height:340px;overflow:auto;padding:4px 0}
+  .mrow{display:flex;gap:12px;padding:5px 14px;cursor:pointer;font-size:13px}
+  .mrow:hover{background:#eff6ff}
+  .mrow code{font-family:ui-monospace,Menlo,Consolas,monospace;min-width:290px;color:#1d4ed8}
+  .mllm{color:var(--mut);font-size:12px}
 </style>
 </head>
 <body>
@@ -95,9 +103,12 @@ _PAGE = r"""<!DOCTYPE html>
   <h1>FutureSearch Box</h1>
   <span class="stat" id="s1">—</span>
   <span class="spacer"></span>
+  <span class="stat">补号</span>
+  <input id="reg-n" type="number" min="1" max="50" value="5" style="width:74px">
+  <span class="stat">个</span>
+  <button id="btn-add" class="primary">开始注册</button>
   <button id="btn-refresh">刷新</button>
   <button id="btn-checkall">一键刷新所有号</button>
-  <button id="btn-add" class="primary">补号</button>
 </header>
 <div class="bar">
   <span>排序</span>
@@ -117,10 +128,15 @@ _PAGE = r"""<!DOCTYPE html>
     <option value="dead">dead</option>
     <option value="exhausted">exhausted</option>
   </select>
-  <input id="q" placeholder="搜索邮箱 / 用户身份…" style="min-width:220px">
+  <input id="q" placeholder="搜索邮箱 / 用户身份…" style="min-width:200px">
   <span id="count"></span>
+  <span class="spacer"></span>
+  <button id="btn-models">可选模型 (179)</button>
 </div>
-<div class="wrap"><div id="app"></div></div>
+<div class="wrap">
+  <div id="models" style="display:none;margin-bottom:16px"></div>
+  <div id="app"></div>
+</div>
 <footer>
   💡 想找更多免费 API、公益站、羊毛资源？去
   <a href="https://baipiao.org/" target="_blank" rel="noopener">baipiao.org</a> 看看
@@ -234,6 +250,7 @@ async function load(){
   $('#s1').innerHTML = '可用 <b>' + p.usable + '</b> / 共 <b>' + p.total
     + '</b> · 余额合计 <b>$' + p.balance_usd + '</b>'
     + (p.registering ? ' · 补号中 <b>' + p.registering + '</b>' : '');
+  if (d.n_models) $('#btn-models').textContent = '可选模型 (' + d.n_models + ')';
   render();
 }
 function renderLogin(err){
@@ -264,12 +281,62 @@ async function act(kind, email){
 }
 
 $('#btn-refresh').onclick = load;
+
+/* ---- 可视化批量注册 ---- */
 $('#btn-add').onclick = async () => {
-  toast('开始补号…');
-  try{ await api('/panel/api/replenish', {method:'POST'}); toast('补号任务已启动'); }
-  catch(e){ toast(String(e.message||e)); }
-  setTimeout(load, 1500);
+  const n = Math.max(1, Math.min(50, parseInt($('#reg-n').value) || 5));
+  const b = $('#btn-add');
+  b.disabled = true; b.textContent = '注册中…';
+  toast('开始注册 ' + n + ' 个（下方状态会实时更新）');
+  try{
+    await api('/panel/api/replenish', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({count:n})});
+  }catch(e){ toast(String(e.message||e)); }
+  // 注册期间加密轮询，好让「补号中 N」实时可见
+  const t = setInterval(load, 3000);
+  setTimeout(()=>{ clearInterval(t); b.disabled = false; b.textContent = '开始注册'; load(); },
+             n * 40000 + 10000);
 };
+
+/* ---- 模型列表（可视化选模型，点一下就复制） ---- */
+let MODELS = null;
+async function toggleModels(){
+  const box = $('#models');
+  if (box.style.display === 'block'){ box.style.display = 'none'; return; }
+  box.style.display = 'block';
+  if (!MODELS){
+    try{ MODELS = (await api('/panel/api/models')).data; }
+    catch(e){ box.innerHTML = '<div class="empty">读不到模型列表：' + esc(e.message) + '</div>'; return; }
+  }
+  renderModels();
+}
+function renderModels(){
+  const q = ($('#mq') ? $('#mq').value : '').trim().toLowerCase();
+  const rows = MODELS.filter(m => !q || m.id.toLowerCase().includes(q) ||
+                                       (m.llm||'').toLowerCase().includes(q));
+  $('#models').innerHTML =
+    '<div class="models">'
+    + '<div class="mhead"><b>可选底层模型</b>'
+    + ' <span class="stat">共 ' + MODELS.length + ' 个 · 点行复制 model 名</span>'
+    + '<span class="spacer"></span>'
+    + '<input id="mq" placeholder="搜索 opus / gpt / gemini…" value="' + esc(q) + '">'
+    + '<button onclick="$(\'#models\').style.display=\'none\'">收起</button></div>'
+    + '<div class="mlist">'
+    + rows.slice(0, 400).map(m =>
+        '<div class="mrow" onclick="cp(\'' + esc(m.id) + '\')" title="点击复制">'
+        + '<code>' + esc(m.id) + '</code>'
+        + '<span class="mllm">' + esc(m.llm || '(默认)') + '</span>'
+        + '</div>').join('')
+    + '</div>'
+    + '<div class="stat" style="padding:8px 4px">用法：把 model 填成上面任意一个，'
+    + '例如 <code>model="claude-opus-5.5"</code>；不填底层模型就用默认 '
+    + '<code>futuresearch-deep</code>。</div>'
+    + '</div>';
+  if ($('#mq')) $('#mq').oninput = renderModels;
+}
+function cp(s){ navigator.clipboard.writeText(s).then(()=>toast('已复制 ' + s)); }
+$('#btn-models').onclick = toggleModels;
 $('#btn-checkall').onclick = async () => {
   const b = $('#btn-checkall'); b.disabled = true; b.textContent = '检查中…';
   ALL.forEach(a => busy.add(a.email)); render();
@@ -297,12 +364,14 @@ def page() -> bytes:
 
 def api_state(gw) -> dict:
     """号池 + 配置概览（面板用）。"""
+    from . import models
     accts = sorted(gw.pool.accounts,
                    key=lambda a: (a.get("status") not in ("active", "pending"),
                                   -float(a.get("balance") or 0)))
     return {
         "pool": gw.pool.status(),
         "model": gw.model,
+        "n_models": len(models.list_models()),
         "credits_per_dollar": CREDITS_PER_DOLLAR,
         "accounts": [{
             "email": a.get("email"),

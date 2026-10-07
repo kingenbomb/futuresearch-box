@@ -21,13 +21,16 @@ def _banner(cfg: dict):
 
 
 def cmd_start(args, cfg):
-    from . import ad, server
+    from . import ad, models, server
 
     def ready(base):
+        panel_url = base.replace("/v1", "/panel")
+        n_models = len(models.list_models())
         _banner(cfg)
         print(ad.banner())            # ← 广告位
         print("-" * 62)
-        print(f"  模型名   : {cfg['model_name']}")
+        print(f"  号池面板 : {panel_url}")
+        print(f"  默认模型 : {cfg['model_name']}   (可选 {n_models} 个，见下)")
         print(f"  Base URL : {base}")
         print(f"  API Key  : {cfg['api_key']}")
         print(f"  号池     : 下限 {cfg['min_accounts']} / 目标 {cfg['target_accounts']}"
@@ -37,10 +40,16 @@ def cmd_start(args, cfg):
         print("  用任意 OpenAI 客户端连：")
         print(f"    base_url = \"{base}\"")
         print(f"    api_key  = \"{cfg['api_key']}\"")
-        print(f"    model    = \"{cfg['model_name']}\"")
+        print(f"    model    = \"{cfg['model_name']}\"      # 默认：上游研究 agent")
+        print("               也可以点名底层模型，例如：")
+        print("                 \"claude-opus-5.5\"  \"claude-opus-5.5-max\"  \"gpt-5.5\"")
+        print("                 \"gemini-3.1-pro\"    \"claude-sonnet-5\"      \"grok-4.5\" …")
         print("-" * 62)
-        print("  号池为空时会自动注册（第一次要等 1~2 分钟）。Ctrl+C 退出。")
+        print(f"  列全部 {n_models} 个可选模型 : python main.py models [关键词]")
+        print(f"  浏览器看号池         : {panel_url}  (首次让你填上面的 API Key)")
+        print("  Ctrl+C 退出。")
         print()
+        sys.stdout.flush()      # 重定向到文件时 stdout 是块缓冲，不刷会看不到
 
     server.serve(cfg, on_ready=ready)
 

@@ -97,6 +97,14 @@ def make_handler(gw: Gateway):
         def _err(self, code, msg, etype="invalid_request_error"):
             self._send(code, {"error": {"message": msg, "type": etype}})
 
+        def _body(self) -> dict:
+            """读并解析请求体 JSON（面板 API 用，读不到就当空对象）。"""
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+                return json.loads(self.rfile.read(n) or b"{}")
+            except Exception:
+                return {}
+
         def _authed(self) -> bool:
             h = self.headers.get("Authorization") or ""
             tok = h.replace("Bearer ", "").strip()
@@ -130,6 +138,9 @@ def make_handler(gw: Gateway):
                                         "data": models.list_models()})
             if path == "/panel/api/state":
                 return self._send(200, panel.api_state(gw))
+            if path == "/panel/api/models":
+                return self._send(200, {"object": "list",
+                                        "data": models.list_models()})
             return self._err(404, f"Not found: {self.path}")
 
         def do_POST(self):
@@ -146,8 +157,20 @@ def make_handler(gw: Gateway):
             if path == "/panel/api/replenish":
                 if not gw.cfg.get("auto_register", True):
                     gw.cfg["auto_register"] = True    # 手动补号时临时允许
-                threading.Thread(target=gw.pool.replenish, daemon=True).start()
-                return self._send(200, {"ok": True, "status": gw.pool.status()})
+                # 面板可以带 {"count": N} 指定这次补多少个（加到当前可用数之上）
+                try:
+                    n = int(self._body().get("count") or 0)
+                except Exception:
+                    n = 0
+                base = len(gw.pool.usable())
+                target = (base + n) if n > 0 else None
+                threading.Thread(target=gw.pool.replenish,
+                                 kwargs={"target": target}, daemon=True).start()
+                return self._send(200, {"ok": True, "count": n or "default",
+                                        "status": gw.pool.status()})
+            if path == "/panel/api/models":
+                return self._send(200, {"object": "list",
+                                        "data": models.list_models()})
             if path == "/panel/api/check-all":
                 return self._send(200, gw.pool.check_all())
             parts = path.split("/")

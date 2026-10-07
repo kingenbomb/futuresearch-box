@@ -34,12 +34,14 @@
 注册过程**实时打日志**（每个号的尝试/失败/退避都可见）。注册完**网关自动启动**：
 
 ```
+  号池面板 : http://127.0.0.1:8000/panel
   模型名   : futuresearch-deep
   Base URL : http://127.0.0.1:8000/v1
   API Key  : sk-fsbox-xxxxxxxx
 ```
 
-拿这三样填进任意 OpenAI 客户端即可。之后不用再手动注册 —— 号池低于下限会自动补。
+拿后三样填进任意 OpenAI 客户端即可；**浏览器打开第一个地址**看号池面板。
+之后不用再手动注册 —— 号池低于下限会自动补。
 
 > 跳过交互直接起服务：`python main.py start`
 > 只补号不起服务：`python main.py register 10`
