@@ -1,9 +1,12 @@
-"""CLI 入口：python -m fsbox [bootstrap|start|register|status]
+"""CLI 入口：python -m fsbox [bootstrap|start|register|status|rescue|invites|referrals|models]
 
     bootstrap  start.bat 用：交互问注册数量 → 带日志注册 → 自动起网关
     start      启动 OpenAI 兼容服务，打印 Base URL + API Key
     register   先手动补 N 个号（不启动服务）
     status     看号池现状
+    rescue     用邀请 token 激活 pending(waitlist) 号 + 补 key
+    invites    看邀请激活 token 池
+    referrals  看（折扣）邀请码树
 
 💡 想找更多免费 API、公益站、羊毛资源？→ https://baipiao.org/
 """
@@ -206,6 +209,50 @@ def cmd_referrals(args, cfg):
     return 0
 
 
+def cmd_invites(args, cfg):
+    """看邀请激活 token 池（和 referrals 那套折扣码不是一回事）。"""
+    from .invites import InviteTree, seed_tokens
+    _banner(cfg)
+    tree = InviteTree(seed_tokens(cfg))
+    st = tree.stats()
+    print(f"  可用 token : {st['available']} 张（拿去激活 pending 号）")
+    print(f"  已消耗     : {st['used']} 张")
+    print(f"  签发号数   : {st['accounts_minted']} 个号 · 共签发 {st['minted_total']} 张")
+    print(f"  开关       : invite_activation={cfg.get('invite_activation', True)}"
+          f"  fanout={cfg.get('invite_fanout', 3)}")
+    if st["available"]:
+        print()
+        print("  ── 待用 token ──")
+        for t in tree.tokens:
+            print(f"   {t}")
+    else:
+        print()
+        print("  池是空的。跑 `python main.py rescue` 会从已激活号现签，或")
+        print("  在 config.json 的 invite_seed_token 手动塞一张种子 token。")
+    return 0
+
+
+def cmd_rescue(args, cfg):
+    """把 pending(waitlist) 号用邀请 token 激活 + 补 key（B）。"""
+    _banner(cfg)
+    pool = Pool(cfg)
+    pend = [a for a in pool.accounts
+            if a.get("status") == "pending" and not a.get("api_key")]
+    print(f"  待救援 pending : {len(pend)} 个")
+    if not pend:
+        print("  没有需要救援的号。")
+        return 0
+    print("  链路：密码登录 → 邀请 token 激活(绕开 Turnstile) → 造 key → 再签发 3 张")
+    print("-" * 62)
+    done = pool.rescue_pending()
+    print("-" * 62)
+    st = Pool(cfg).status()          # 重读盘
+    print(f"  救援成功 {done} 个。号池现状: 可用 {st['usable']} / 共 {st['total']}"
+          f"  · 余额合计 ${st['balance_usd']}")
+    print(f"  分状态: {st['by_status']}")
+    return 0
+
+
 def main(argv=None):
     # Windows 控制台默认 GBK，打印中文/emoji 会 UnicodeEncodeError。
     # 统一重编码成 UTF-8（中文 Windows + chcp 936 下直接跑 main.py 也不会崩）。
@@ -229,6 +276,10 @@ def main(argv=None):
     p_bs.set_defaults(fn=cmd_bootstrap)
     p_rf = sub.add_parser("referrals", help="看邀请码树")
     p_rf.set_defaults(fn=cmd_referrals)
+    p_iv = sub.add_parser("invites", help="看邀请激活 token 池")
+    p_iv.set_defaults(fn=cmd_invites)
+    p_rs = sub.add_parser("rescue", help="用邀请 token 激活 pending(waitlist) 号")
+    p_rs.set_defaults(fn=cmd_rescue)
     p_md = sub.add_parser("models", help="列出/搜索可选的底层模型")
     p_md.add_argument("search", nargs="?", default="",
                       help="关键词过滤，如 opus / gpt / gemini")

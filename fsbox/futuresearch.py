@@ -185,6 +185,53 @@ class FutureSearchClient:
             return False, str(d.get("message") or "invalid")[:80]
         return False, f"HTTP {st}"
 
+    # ---------- 邀请激活（cc_invitations；注意不是上面的 referral 折扣） ----------
+    #
+    # 两套系统的区别见 invites.py 顶部注释：
+    #   referral   = 折扣券，apply 到 waitlist 号不产生激活行
+    #   invitation = 真正的激活：waitlist 号用别人的 token 一兑即激活 + $20
+
+    def create_cc_invitation(self, access_token: str, label: str = "fsbox") -> str | None:
+        """本号签发一张邀请 token 供别人激活。
+
+        上游每号**同时最多 3 张未领**（invitation_limit=3），满了返回
+        400 "Invitation limit reached"；被领走会腾出槽位。签发失败返回 None。
+        """
+        st, d = self._rpc("create_cc_invitation", access_token, {"p_label": label})
+        if st == 200 and isinstance(d, dict):
+            return d.get("token")
+        return None
+
+    def accept_and_activate_invitation(self, access_token: str, token: str) -> tuple[bool, str]:
+        """用别人的邀请 token **激活**本号（waitlist → 激活，绕开 Turnstile）。
+
+        成功返回 (True, "activated")；token 无效/已用返回 (False, 原因)。
+        激活后 cc_user_activations 会多一行 activation_type="invited"。
+        """
+        st, d = self._rpc("accept_and_activate_invitation", access_token, {"p_token": token})
+        if st == 200:
+            return True, "activated"
+        if isinstance(d, dict) and d.get("message"):
+            return False, str(d["message"])[:80]
+        return False, f"HTTP {st}"
+
+    def activation_row(self, access_token: str, uid: str):
+        """读本号的激活行（cc_user_activations）。没激活返回 None。
+
+        行里 activation_type 是 organic(invite?) / invited，invitation_limit 是额度。
+        """
+        try:
+            r = self.s.get(
+                f"{config.SUPABASE_URL}/rest/v1/cc_user_activations"
+                f"?select=*&user_id=eq.{uid}",
+                headers={"apikey": config.SUPABASE_ANON_KEY,
+                         "Authorization": f"Bearer {access_token}"},
+                timeout=20)
+            d = r.json() if r.content else []
+            return d[0] if isinstance(d, list) and d else None
+        except Exception:
+            return None
+
     def create_api_key(self, access_token: str, account_id: str, name: str) -> str:
         r = self.s.post(
             f"{config.APP_BASE}/app/api/api-keys/create",

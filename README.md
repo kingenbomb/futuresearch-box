@@ -175,6 +175,54 @@ python main.py referrals     # 看整棵树：几层、每个码带过几个号
 >
 > 邀请码整段是「尽力而为」：拿不到不影响号本身注册成功。
 
+## 邀请激活（真正能激活账号的那套）
+
+> ⚠️ 别和上面那节「邀请码树」搞混：那节兑的是 **referral 折扣券**，**不激活**。
+> 真正能把 waitlist 号**直接激活**的是这里的 **invitation（邀请）**。
+
+上游有两条激活路径：
+
+| 路径 | 端点 / RPC | 特点 |
+|---|---|---|
+| `organic` | `POST /app/api/activation/organic`（要过 Turnstile） | 会被 `at_capacity` 卡住 |
+| `invited` | `accept_and_activate_invitation(p_token)` | **不走 Turnstile**，秒激活 |
+
+实测机制（2026-10）：
+
+- 已激活号 `create_cc_invitation(p_label)` → 签发一张邀请 token；**每号同时最多 3 张未领**，被领走腾位。
+- waitlist 号 `accept_and_activate_invitation(p_token)` → **立刻激活**：`cc_user_activations` 多一行 `activation_type="invited"`，**$20 到账**，能造 `sk-cho-` key。
+- **被邀请激活的号自己也能再签 3 张** → 一棵 3 叉树，指数铺开。
+
+所以：**有一个激活号当种子，就能滚出一整池**，后续全走邀请、绕开 Turnstile / at_capacity。
+本项目的做法是「能邀请就邀请，失败回退 organic」：
+
+```
+新号注册(signup)
+  └─ 池里有邀请 token ?
+        ├─ 有 → accept_and_activate_invitation → 秒激活（跳过 Turnstile）
+        └─ 无 → 回退 Turnstile organic 激活
+  └─ 激活成功后 → create_cc_invitation ×3 入池，供下一批号用
+```
+
+token 池存 `data/invites.json`，跨次运行累积。
+
+```bash
+python main.py invites    # 看 token 池：几张待用、签发自哪些号
+python main.py rescue     # 救援：把 pending(waitlist) 号用邀请 token 激活 + 补 key
+```
+
+> 冷启动有一个前提：**至少得先有一个激活号**（organic 过的，或别人给的邀请 token）。
+> 池空时 `rescue` 会先尝试从号池里已激活的号现签；实在没有就在
+> `config.json` 的 `invite_seed_token` 里手动塞一张种子 token（多个用逗号分隔）。
+
+配置（`data/config.json`）：
+
+| 键 | 默认 | 说明 |
+|---|---|---|
+| `invite_activation` | true | 有 token 时优先用邀请激活，失败回退 organic |
+| `invite_fanout` | 3 | 每个激活号签发几张邀请（上游实测同时上限 3） |
+| `invite_seed_token` | 空 | 可选：手动塞种子 token，逗号分隔 |
+
 ## 邮箱来源
 
 | `email_mode` | 行为 |
@@ -190,6 +238,9 @@ python main.py referrals     # 看整棵树：几层、每个码带过几个号
 python main.py start              # 启动服务（默认）
 python main.py register 10        # 手动补到 10 个号
 python main.py status             # 看号池现状
+python main.py rescue             # 用邀请 token 激活 pending(waitlist) 号
+python main.py invites            # 看邀请激活 token 池
+python main.py referrals          # 看（折扣）邀请码树
 ```
 
 ## 配置

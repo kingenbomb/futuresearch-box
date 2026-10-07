@@ -17,6 +17,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from . import config
 from .futuresearch import FutureSearchClient, UpstreamError
+from .invites import InviteTree, seed_tokens
 from .mailbox import Mailbox
 from .referral import ReferralTree
 from .turnstile import SolveError, TurnstileSolver
@@ -47,6 +48,40 @@ _BACKOFF_HINTS = ("rate_limit", "too_many", "over_email_send", "429",
 def _is_backoff(err: str) -> bool:
     low = err.lower()
     return any(h in low for h in _BACKOFF_HINTS)
+
+
+def _mint_invites(client, tree, access_token: str, uid: str, email: str, fanout: int) -> int:
+    """激活后让本号签发邀请 token 入池，供下一批号用。返回本次签发数。
+
+    上游每号同时最多 3 张未领，签满会返回 None（"Invitation limit reached"）→ 自然停。
+    """
+    got = 0
+    for _ in range(max(1, int(fanout or 3))):
+        t = client.create_cc_invitation(access_token, "fsbox")
+        if not t:
+            break
+        if tree.add(t):
+            got += 1
+    if got:
+        tree.note_minted(uid or email, got)
+        log(f"{email} 签发 {got} 张邀请 token（池内现有 {tree.available()} 张可救援）")
+    return got
+
+
+def _invite_activate(cfg: dict, client, access_token: str, idx) -> bool:
+    """尝试用池里的邀请 token 激活本号。成功 True；池空/失败 False（调用方回退 organic）。"""
+    if not cfg.get("invite_activation", True):
+        return False
+    tree = InviteTree(seed_tokens(cfg))
+    tok = tree.take()
+    if not tok:
+        return False
+    ok, why = client.accept_and_activate_invitation(access_token, tok)
+    if ok:
+        log(f"#{idx} 邀请激活成功（token {tok[:10]}…，跳过 Turnstile）")
+        return True
+    log(f"#{idx} 邀请 token 不可用（{why}），回退 organic 激活")
+    return False
 
 
 def _do_referral(cfg: dict, client, access_token: str, user_id: str):
@@ -80,7 +115,7 @@ def _do_referral(cfg: dict, client, access_token: str, user_id: str):
 
 
 def register_one(cfg: dict, idx: int, client: FutureSearchClient) -> dict:
-    """跑完整链路：注册 → 过 Turnstile 激活 → 造 API key。返回账号 dict。"""
+    """跑完整链路：注册 → 激活（邀请优先，回退 Turnstile organic）→ 造 API key。返回账号 dict。"""
     box = Mailbox(cfg).create(idx)      # local 造地址 / vip215 开真实收件箱
     email = box["address"]
     password = gen_password(cfg)
@@ -97,16 +132,25 @@ def register_one(cfg: dict, idx: int, client: FutureSearchClient) -> dict:
 
             # widget 只在登录后的关卡页渲染 → 必须带会话 cookie 进站
             cookie = client.build_session_cookie(sess)
-            with TurnstileSolver(headless_hide=cfg.get("solver_headless", True),
-                                 proxy=cfg.get("proxy") or None,
-                                 chrome_path=cfg.get("chrome_path") or None) as solver:
-                token = solver.solve(f"{config.APP_BASE}/app",
-                                     sitekey=config.TURNSTILE_SITEKEY,
-                                     timeout=90,
-                                     cookies={"sb-everyrow-cc-auth-token": cookie})
-            client.activate(sess["access_token"], token)
+
+            # 激活：优先用邀请 token（绕开 Turnstile / at_capacity），没有/失败再走 organic
+            if not _invite_activate(cfg, client, sess["access_token"], idx):
+                with TurnstileSolver(headless_hide=cfg.get("solver_headless", True),
+                                     proxy=cfg.get("proxy") or None,
+                                     chrome_path=cfg.get("chrome_path") or None) as solver:
+                    token = solver.solve(f"{config.APP_BASE}/app",
+                                         sitekey=config.TURNSTILE_SITEKEY,
+                                         timeout=90,
+                                         cookies={"sb-everyrow-cc-auth-token": cookie})
+                client.activate(sess["access_token"], token)
 
             api_key = client.create_api_key(sess["access_token"], user_id, "fsbox")
+
+            # 激活后：本号签发邀请 token 入池，供下一批号激活用（3 叉树自繁殖）
+            if cfg.get("invite_activation", True):
+                _mint_invites(client, InviteTree(seed_tokens(cfg)),
+                              sess["access_token"], user_id, email,
+                              int(cfg.get("invite_fanout", 3)))
 
             # 邀请码：兑上级 → 生成自己的码（生成失败不影响号本身）
             ref_parent, ref_own = _do_referral(cfg, client, sess["access_token"], user_id)
@@ -397,6 +441,84 @@ class Pool:
             return 0
         log(f"可用号不足（{len(self.usable())}），开始补号…")
         return self.replenish(progress=progress)
+
+    def _seed_from_active(self, client, tree, fanout: int) -> int:
+        """池里没 token 时，从号池里已激活的号现签一批出来做种子。返回签到的张数。"""
+        for b in list(self.accounts):
+            if b.get("status") not in ("active",) or not b.get("password"):
+                continue
+            try:
+                sess = client.password_login(b["email"], b["password"])
+                tok = sess["access_token"]
+                if not client.is_activated(tok):
+                    continue
+                uid = (sess.get("user") or {}).get("id") or b.get("user_id") or ""
+                if _mint_invites(client, tree, tok, uid, b["email"], fanout):
+                    return tree.available()
+            except Exception:
+                continue
+        return tree.available()
+
+    def rescue_pending(self, progress=None) -> int:
+        """用邀请 token 把 pending(waitlist) 号激活 + 补 key，返回救援成功数。
+
+        链路（每个 pending 号）：
+            密码登录 → 若还没激活：拿一张邀请 token 兑掉激活（绕开 Turnstile）
+                     → 造 sk-cho- key → 本号再签发 3 张回池（3 叉树自繁殖）
+
+        池里没 token 时，先从号池里已激活的号现签。整个过程「尽力而为」：
+        单个号失败不影响别的号。
+        """
+        pend = [a for a in self.accounts
+                if a.get("status") == "pending" and not a.get("api_key")]
+        if not pend:
+            log("没有待救援的 pending 号。")
+            return 0
+        log(f"待救援 pending: {len(pend)} 个")
+        fanout = int(self.cfg.get("invite_fanout", 3))
+        tree = InviteTree(seed_tokens(self.cfg))
+        client = FutureSearchClient(proxy=self.cfg.get("proxy") or "")
+        done = 0
+        for a in pend:
+            email = a.get("email")
+            try:
+                sess = client.password_login(email, a.get("password") or "")
+                tok = sess["access_token"]
+                uid = (sess.get("user") or {}).get("id") or a.get("user_id") or ""
+
+                if not client.is_activated(tok):
+                    if not tree.available():
+                        self._seed_from_active(client, tree, fanout)
+                    itok = tree.take()
+                    if not itok:
+                        log(f"{email} 跳过：无可用邀请 token（上游限额/无种子号）")
+                        continue
+                    ok, why = client.accept_and_activate_invitation(tok, itok)
+                    if not ok:
+                        log(f"{email} 邀请激活失败：{why}")
+                        continue
+                    log(f"{email} 邀请激活成功（token {itok[:10]}…）")
+
+                a["api_key"] = client.create_api_key(tok, uid, "fsbox")
+                a["user_id"] = uid or a.get("user_id")
+                a["status"] = "active"
+                a["fails"] = 0
+                if a.get("balance") is None:
+                    a["balance"] = 20.0
+                a["probe_note"] = "邀请激活 → 已补 key"
+                with self.lock:
+                    self._rewrite()
+                done += 1
+                log(f"{email} → active（$20 到账）")
+
+                # 本号激活后立刻签发邀请，继续滚给后面的号用
+                _mint_invites(client, tree, tok, uid, email, fanout)
+                if progress:
+                    progress(done, a)
+            except Exception as e:  # noqa: BLE001
+                log(f"{email} 救援失败: {type(e).__name__}: {str(e)[:140]}")
+        log(f"救援完成：{done}/{len(pend)} 个转 active")
+        return done
 
     def status(self) -> dict:
         with self.lock:

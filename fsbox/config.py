@@ -59,6 +59,14 @@ DEFAULTS = {
     "referral_seed_code": "",           # 顶层种子码；填了才启用
     "referral_fanout": 5,               # 一个码最多当几次上级（对应用户画的那张扇形图）
 
+    # ---- 邀请激活（invitation，真正能把 waitlist 号激活的那套）----
+    # 实测：已激活号可签发邀请 token；waitlist 号用 token 直接激活 + $20，
+    # 且被邀请号自己也能再发 3 张 → 一棵 3 叉树，绕开 Turnstile / at_capacity。
+    # 和上面的 referral（折扣券）是两套东西，见 invites.py。
+    "invite_activation": True,          # 有 token 时优先用邀请激活，失败回退 organic
+    "invite_fanout": 3,                 # 每个激活号签发几张邀请（上游实测同时上限 3）
+    "invite_seed_token": "",            # 可选：手动塞种子 token（多个用逗号分隔）
+
     # ---- 上游调用 ----
     "effort_level": "high",   # 用默认模型时的档位；low 免费但答案过时
     "task_timeout": 600,      # 单次研究任务墙钟上限(秒)
