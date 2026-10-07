@@ -1,0 +1,222 @@
+# FutureSearch Box
+
+> 🔗 **本项目由 [白嫖站 · baipiao.org](https://baipiao.org/) 免费开源。**
+> 免费 API、公益站、羊毛资源聚合 —— 想找更多白嫖资源，来这里看看。
+
+把 [FutureSearch](https://futuresearch.ai/) 的深度研究能力，变成一个**本地开箱即用的 OpenAI 兼容接口**。
+
+自动注册账号 → 自动过 Cloudflare Turnstile → 自动补号 → 对外提供一个 `base_url` + `api_key`，
+任何 OpenAI 客户端填上就能用。
+
+```
+你 ──(OpenAI 协议)──► FutureSearch Box ──(账号池轮换)──► futuresearch.ai
+```
+
+## 一键使用
+
+**Windows**：双击 `start.bat`
+**Linux / macOS**：`./start.sh`
+
+首次运行会自动建虚拟环境、下载依赖、注册账号（等 1~2 分钟）。起来后控制台会打印：
+
+```
+  模型名   : futuresearch-deep
+  Base URL : http://127.0.0.1:8000/v1
+  API Key  : sk-fsbox-xxxxxxxx
+```
+
+拿这三样东西填进任意 OpenAI 客户端即可。
+
+## 前置条件
+
+只有一个：**本机装了 Google Chrome**。
+
+过 Turnstile 必须用真实 Chrome 的指纹（Playwright 自带的 chromium 会被判失败），
+所以请装 Chrome，Edge / 其他浏览器不行。Chrome 装好后本项目会自动找到它。
+
+## 调用示例
+
+```python
+from openai import OpenAI
+
+client = OpenAI(base_url="http://127.0.0.1:8000/v1", api_key="sk-fsbox-xxxx")
+r = client.chat.completions.create(
+    model="futuresearch-deep",
+    messages=[{"role": "user", "content": "Anthropic 最新一轮融资的估值是多少？给出来源。"}],
+)
+print(r.choices[0].message.content)
+```
+
+```bash
+curl http://127.0.0.1:8000/v1/chat/completions \
+  -H "Authorization: Bearer sk-fsbox-xxxx" -H "Content-Type: application/json" \
+  -d '{"model":"futuresearch-deep","messages":[{"role":"user","content":"2+2=?"}]}'
+```
+
+## 这是什么 / 不是什么
+
+**是**：一个把 FutureSearch 的**异步研究任务**包成同步对话的网关。它把用户的问题
+丢给 FutureSearch 的 `single-agent`，等它检索+推理完（通常 20 秒~几分钟），把最终
+答案作为一条 assistant 消息返回。
+
+**不是**：不是 Claude/GPT 的 token 中转。上游按**次**计费（每个号 $20 一次性额度），
+没有 token 概念。所以：
+
+| | 说明 |
+|---|---|
+| 速度 | 慢，单次几十秒到几分钟（深度研究会真的去查资料） |
+| 计费 | 上游按次扣美元；本服务对你的用量只是**估算** token 数给你看 |
+| 并发 | 受号池大小限制，号用完了会自动补 |
+| 流式 | 支持 SSE 外壳，但内容是一次性给的（上游不是流式） |
+
+## 号池面板
+
+服务起来后浏览器打开 **http://127.0.0.1:8000/panel** —— 卡片式看每个号的情况：
+
+- 每个号一张卡：`FutureSearch` 徽标、邮箱、UID、**可用积分**、状态、邮箱来源
+- 四个按钮：`✓` 健康检查（真打一次上游 `/billing`）、`↻` 刷新余额、`⏸` 暂停/启用、`✕` 删除
+- 顶栏：`刷新` / **`一键刷新所有号`**（并发打上游，实测 2 个号 1 秒完）/ `补号`
+- 筛选栏：**排序**（积分 ↓/↑、状态、邮箱、最近注册）+ **状态筛选** + **邮箱/UID 搜索**
+- 单个号检查中会置灰；页面每 15 秒自动刷新（有任务在跑时暂停轮询，免得打断）
+
+**积分怎么来的**：上游（REST API / 网页端 / MCP 三处都查过）**只有美元余额**，没有独立的
+积分字段 —— MCP 的 `futuresearch_balance` 也返回 `"Current balance: $19.03"`。所以面板按
+**1 积分 = 1 美分**（`余额 × 100`）换算，$20 → 2000 积分。倍率在 `panel.py` 的
+`CREDITS_PER_DOLLAR`，要改改那一行。
+
+首次打开会让你填 API Key（就是 `data/config.json` 里的 `api_key`），存在浏览器本地。
+面板数据接口也吃这个 key，所以别把服务暴露到公网。
+
+## 选底层模型
+
+上游支持挑具体模型（OpenAPI 的 `LLMEnumPublic`，共 **143 个**：Claude 4.5~5.5 / Fable 5、
+GPT 5~6.1 / Gemini 3.x / GLM / Grok / Muse）。`GET /v1/models` 会列出全部，客户端
+把 `model` 换成想用的那个即可：
+
+```python
+# 走默认研究 agent（不指定底层模型）
+client.chat.completions.create(model="futuresearch-deep", messages=[...])
+
+# 指定用 Claude Opus 5.5 跑
+client.chat.completions.create(model="claude-opus-5.5", messages=[...])
+
+# 指定档位（max 迭代更多、更慢更贵）
+client.chat.completions.create(model="claude-opus-5.5-max", messages=[...])
+```
+
+三种写法都认：
+
+| 写法 | 例 |
+|---|---|
+| 亲民别名 | `claude-opus-5.5`、`gpt-5.5`、`gemini-3.1-pro`、`grok-4.5` |
+| 规范形式（枚举小写） | `claude-5-5-opus-max`、`gpt-5-6-sol-high` |
+| 原样枚举 | `CLAUDE_5_5_OPUS_MAX` |
+
+**注意**：`effort_level` 和 `llm` 上游是**互斥**的 —— 用别名选模型时，服务会自动按模型
+档位后缀推 `iteration_budget`（`_HIGH`→35、`_MAX`→60…），不再发 `effort_level`。
+想手动定就设 `iteration_budget`（0=自动）。
+
+## 邮箱来源
+
+| `email_mode` | 行为 |
+|---|---|
+| `local`（默认） | 本地造地址 `fs<时间戳><随机>@mailinator.com`。因为上游 `autoconfirm` **不发确认信**，收不收信无所谓 |
+| `vip215` | 走 [vip.215.im](https://vip.215.im/docs) 开真实收件箱，需自配 `email_api_key`（`X-API-Key: AC-...`）。好处：用真域名而非临时域，风控友好，且真能收信（将来做验证/找回密码用得上） |
+
+`vip215` 开箱失败会自动退回 `local`，不会让注册崩掉。
+
+## 命令
+
+```bash
+python main.py start              # 启动服务（默认）
+python main.py register 10        # 手动补到 10 个号
+python main.py status             # 看号池现状
+```
+
+## 配置
+
+所有配置在 `data/config.json`（首次运行自动生成）。常改的几个：
+
+| 键 | 默认 | 说明 |
+|---|---|---|
+| `port` | 8000 | 服务端口 |
+| `api_key` | 随机生成 | **对外的 key**，可以改成你喜欢的 |
+| `model_name` | futuresearch-deep | 对外模型名 |
+| `min_accounts` | 2 | 可用号少于这个数自动补 |
+| `target_accounts` | 5 | 补到这么多就停 |
+| `auto_register` | true | 关掉就只手动 `register` |
+| `effort_level` | high | 走默认模型时的档位：`high` 答案带引用（约 $0.40/次）；`low` 免费但答案质量差 |
+| `iteration_budget` | 0 | 选具体模型时的迭代预算；0=按模型档位自动推 |
+| `include_reasoning` | false | 选具体模型时是否把推理过程带进回答 |
+| `email_mode` | local | `local`=本地造地址 / `vip215`=走 vip.215.im 开真实收件箱 |
+| `email_api_key` | 空 | `vip215` 模式用的 key（`AC-...`） |
+| `proxy` | 空 | 如 `http://user:pass@host:port`。注册被风控时挂代理换 IP |
+| `chrome_path` | 空 | 空 = 自动找 Chrome |
+
+环境变量可覆盖任意键：`FSBOX_PORT=9000`、`FSBOX_PROXY=...` 等。
+
+## 号池与成本
+
+每个注册出来的号自带 **$20 一次性额度**，按 `effort_level=high`（约 $0.40/次）算，
+**一个号大约能跑 50 次**。号池耗尽会自动补新号。
+
+`python main.py status` 能看到每个号的余额和状态。
+
+## 排错
+
+| 现象 | 原因 / 处理 |
+|---|---|
+| 起不来，说没找到 Chrome | 装 Google Chrome（不是 Edge） |
+| 一直补不到号 | 本机 IP 被风控了 —— 在 `config.json` 里挂 `proxy` 换 IP |
+| 日志报 `captcha_failed` | 同上，换 IP；或等一会儿再试 |
+| 请求很慢 | 正常，深度研究要几十秒到几分钟 |
+| 返回 500 `号池里没有可用号` | 补号还没完成或全挂了，看日志；先 `python main.py register 3` |
+
+## 目录结构
+
+```
+futuresearch-box/
+├── start.bat / start.sh     # 一键启动（建环境+装依赖+跑）
+├── setup.bat / setup.sh     # 只装依赖
+├── main.py                  # 便捷入口
+├── requirements.txt
+├── fsbox/
+│   ├── config.py            # 配置读写
+│   ├── turnstile.py         # 自带打码（DrissionPage 接管真实 Chrome）
+│   ├── futuresearch.py      # 上游接口：注册/激活/造 key/跑研究
+│   ├── pool.py              # 号池 + 自动补号
+│   ├── server.py            # OpenAI 兼容 HTTP 服务
+│   └── __main__.py          # CLI
+└── data/                    # 运行时生成（config.json / accounts.jsonl）
+```
+
+## 免责声明
+
+- 本项目**仅用于技术研究与学习**，由 [白嫖站](https://baipiao.org/) 免费开源，**无任何商业用途**。
+- 本项目**不是** FutureSearch 官方产品，与 FutureSearch / Anthropic / OpenAI / Google 等**均无任何关联**，也未获得其授权或认可。
+- 本项目通过公开接口访问上游服务。**批量注册账号可能违反上游服务条款**，账号可能被限制或封禁，由此产生的一切后果**由使用者自行承担**。
+- 使用者应自行确保其使用行为符合所在地法律法规及上游服务条款。**因使用本项目产生的任何直接或间接损失，作者与白嫖站概不负责。**
+- 请勿将本服务暴露到公网、勿用于商业转售；上游额度用尽/被封与作者无关。
+- 本项目按「现状」提供，不附带任何明示或暗示的担保。
+
+## 广告 / 署名
+
+本程序在**多个位置**带有白嫖站的署名，均为**明文可见**，不隐藏、不欺骗：
+
+| 位置 | 形式 |
+|---|---|
+| 启动横幅 | 每次 `start` 打印一行 `白嫖站 · https://baipiao.org/` |
+| 提示词广告 | 发给上游研究 agent 的任务文本末尾缀一句服务来源说明 |
+| 结果署名 | 每条返回的答案末尾追加一行署名（用 `---` 分隔线隔开，**明确是服务方署名，不是模型自己说的话**） |
+| 面板页脚 | 号池面板底部一行链接 |
+| 源码 | 各模块 docstring + `start.bat` / `start.sh` 顶部注释 |
+
+全部可在 `data/config.json` 里关掉或改文案：
+
+| 键 | 默认 | 说明 |
+|---|---|---|
+| `ad_enabled` | true | 总开关，`false` = 三处全部不投 |
+| `ad_prompt` | true | 只关提示词广告 |
+| `ad_footer` | 空 | 自定义结果署名文案（留空用默认） |
+
+文案集中在 `fsbox/ad.py`，要改改那一个文件即可。

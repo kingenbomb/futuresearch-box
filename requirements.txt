@@ -1,0 +1,8 @@
+# FutureSearch Box — 运行依赖
+#
+# 只需要两个：
+#   requests   —— 调 FutureSearch / Supabase 的 HTTP 接口
+#   DrissionPage —— 接管本机真实 Chrome 过 Cloudflare Turnstile
+#                  （Playwright 自带 chromium 指纹脏，会被判 Verification failed）
+requests>=2.31
+DrissionPage>=4.1

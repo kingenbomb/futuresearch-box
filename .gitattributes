@@ -1,0 +1,10 @@
+# 行尾统一：Windows 批处理要 CRLF，其余一律 LF。
+# 不写这个的话 Windows 的 core.autocrlf=true 会把 .sh 也转成 CRLF，
+# 拿 Linux 上跑就成 `bad interpreter: /usr/bin/env bash^M`。
+* text=auto eol=lf
+*.sh   text eol=lf
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+*.png  binary
+*.jpg  binary
+*.ico  binary

@@ -1,0 +1,294 @@
+"""账号池：本地账号存储 + 轮换取号 + 自动补号。
+
+账号就是一把 sk-cho- API key（上游按次扣美元，$20 一次性）。号池把注册、健康
+检查、补号都收在这里，server 只管 acquire() 要一个能用的号。
+
+
+白嫖站 · https://baipiao.org/  —— 免费 API / 公益站 / 羊毛资源
+"""
+import itertools
+import json
+import os
+import random
+import string
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+from . import config
+from .futuresearch import FutureSearchClient, UpstreamError
+from .mailbox import Mailbox
+from .turnstile import SolveError, TurnstileSolver
+
+
+def log(msg: str) -> None:
+    print(f"[pool] {msg}", flush=True)
+
+
+def _now() -> int:
+    return int(time.time())
+
+
+def gen_password(cfg: dict) -> str:
+    pw = (cfg.get("password") or "").strip()
+    if pw:
+        return pw
+    alphabet = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    return "".join(random.choice(alphabet) for _ in range(16)) + "!a9"
+
+
+# 这些错误退避久一点再试（限流 / 过码被拒），别立刻重撞
+_BACKOFF_HINTS = ("rate_limit", "too_many", "over_email_send", "429",
+                  "slow down", "captcha_failed")
+
+
+def _is_backoff(err: str) -> bool:
+    low = err.lower()
+    return any(h in low for h in _BACKOFF_HINTS)
+
+
+def register_one(cfg: dict, idx: int, client: FutureSearchClient) -> dict:
+    """跑完整链路：注册 → 过 Turnstile 激活 → 造 API key。返回账号 dict。"""
+    box = Mailbox(cfg).create(idx)      # local 造地址 / vip215 开真实收件箱
+    email = box["address"]
+    password = gen_password(cfg)
+    retries = int(cfg.get("register_retries", 3))
+    last_err = None
+
+    for attempt in range(1, retries + 1):
+        try:
+            sess = client.signup(email, password)
+            user_id = (sess.get("user") or {}).get("id") or ""
+            if not user_id:
+                raise UpstreamError("signup 未返回 user.id")
+
+            # widget 只在登录后的关卡页渲染 → 必须带会话 cookie 进站
+            cookie = client.build_session_cookie(sess)
+            with TurnstileSolver(headless_hide=cfg.get("solver_headless", True),
+                                 proxy=cfg.get("proxy") or None,
+                                 chrome_path=cfg.get("chrome_path") or None) as solver:
+                token = solver.solve(f"{config.APP_BASE}/app",
+                                     sitekey=config.TURNSTILE_SITEKEY,
+                                     timeout=90,
+                                     cookies={"sb-everyrow-cc-auth-token": cookie})
+            client.activate(sess["access_token"], token)
+
+            api_key = client.create_api_key(sess["access_token"], user_id, "fsbox")
+            return {
+                "email": email,
+                "email_source": box.get("source", "local"),
+                "password": password,
+                "user_id": user_id,
+                "api_key": api_key,
+                "balance": 20.0,
+                "status": "active",
+                "fails": 0,
+                "created_at": _now(),
+                "last_used": 0,
+            }
+        except (UpstreamError, SolveError, Exception) as e:  # noqa: BLE001
+            last_err = f"{type(e).__name__}: {str(e)[:160]}"
+            wait = (20 * attempt + random.uniform(0, 5)) if _is_backoff(last_err) \
+                else (2 * attempt + random.uniform(0, 1))
+            log(f"#{idx} 第{attempt}次失败: {last_err}  ({wait:.0f}s 后重试)")
+            if attempt < retries:
+                time.sleep(wait)
+    raise UpstreamError(f"#{idx} 注册失败: {last_err}")
+
+
+class Pool:
+    """线程安全的账号池。accounts.jsonl 一行一个号。"""
+
+    def __init__(self, cfg: dict):
+        self.cfg = cfg
+        self.lock = threading.RLock()
+        self.accounts: list[dict] = []
+        self._rr = itertools.cycle([0])  # 轮换游标，_next_live 时重建
+        self._idx = 0
+        self._registering = 0
+        self._load()
+
+    # ---------- 持久化 ----------
+
+    def _load(self):
+        p = config.ACCOUNTS_PATH
+        if not p.exists():
+            return
+        for line in p.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                self.accounts.append(json.loads(line))
+            except Exception:
+                pass
+        log(f"载入 {len(self.accounts)} 个号")
+
+    def _append(self, acct: dict):
+        config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+        with config.ACCOUNTS_PATH.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(acct, ensure_ascii=False) + "\n")
+            f.flush()
+
+    # ---------- 取号 ----------
+
+    def usable(self) -> list[dict]:
+        return [a for a in self.accounts if a.get("status") == "active"]
+
+    def acquire(self) -> dict | None:
+        """轮换取一个 active 号。没有返回 None。"""
+        with self.lock:
+            live = self.usable()
+            if not live:
+                return None
+            acct = live[self._idx % len(live)]
+            self._idx += 1
+            acct["last_used"] = _now()
+            return acct
+
+    def mark_ok(self, acct: dict, balance=None):
+        with self.lock:
+            acct["fails"] = 0
+            if balance is not None:
+                acct["balance"] = balance
+                if balance <= 0:
+                    acct["status"] = "exhausted"   # $20 是一次性额度，耗尽即废
+
+    def mark_fail(self, acct: dict, err: str = ""):
+        with self.lock:
+            acct["fails"] = int(acct.get("fails") or 0) + 1
+            # key 失效（401/402/403）直接判死；其它错误攒够 3 次也算坏号
+            if "401" in err or "402" in err or "403" in err or acct["fails"] >= 3:
+                acct["status"] = "dead"
+
+    # ---------- 面板操作 ----------
+
+    def find(self, email: str) -> dict | None:
+        with self.lock:
+            for a in self.accounts:
+                if a.get("email") == email:
+                    return a
+        return None
+
+    def set_status(self, email: str, status: str) -> bool:
+        """面板上暂停/启用（paused 的号不参与取号）。"""
+        with self.lock:
+            a = self.find(email)
+            if not a:
+                return False
+            a["status"] = status
+            self._rewrite()
+            return True
+
+    def remove(self, email: str) -> bool:
+        with self.lock:
+            before = len(self.accounts)
+            self.accounts = [a for a in self.accounts if a.get("email") != email]
+            if len(self.accounts) == before:
+                return False
+            self._rewrite()
+            return True
+
+    def check(self, email: str) -> dict:
+        """面板上的「健康检查」：真打一次上游 /billing，刷新余额。"""
+        a = self.find(email)
+        if not a:
+            return {"ok": False, "error": "no such account"}
+        client = FutureSearchClient(proxy=self.cfg.get("proxy") or "")
+        try:
+            bal = client.billing(a["api_key"])
+        except Exception as e:
+            return {"ok": False, "error": f"{type(e).__name__}: {str(e)[:120]}"}
+        with self.lock:
+            if bal is None:
+                a["status"] = "dead"
+            else:
+                a["balance"] = bal
+                a["fails"] = 0
+                if a.get("status") == "dead":
+                    a["status"] = "active"
+            a["last_check"] = _now()
+            self._rewrite()
+        return {"ok": bal is not None, "balance": bal, "status": a["status"]}
+
+    def check_all(self, statuses=None, workers: int = 6) -> dict:
+        """并发给号做健康检查（面板「刷新全部」）。statuses 可选过滤。"""
+        targets = [a for a in list(self.accounts)
+                   if not statuses or a.get("status") in statuses]
+        results = {}
+        if not targets:
+            return {"checked": 0, "ok": 0, "results": {}, "pool": self.status()}
+        with ThreadPoolExecutor(max_workers=max(1, min(workers, 12))) as ex:
+            futs = {ex.submit(self.check, a["email"]): a["email"] for a in targets}
+            for f in as_completed(futs):
+                email = futs[f]
+                try:
+                    results[email] = f.result()
+                except Exception as e:  # noqa: BLE001
+                    results[email] = {"ok": False, "error": f"{type(e).__name__}: {str(e)[:100]}"}
+        ok = sum(1 for r in results.values() if r.get("ok"))
+        return {"checked": len(targets), "ok": ok,
+                "results": results, "pool": self.status()}
+
+    def _rewrite(self):
+        """整表重写 accounts.jsonl（改状态/删号后用）。"""
+        config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+        tmp = config.ACCOUNTS_PATH.with_suffix(".jsonl.tmp")
+        with tmp.open("w", encoding="utf-8") as f:
+            for a in self.accounts:
+                f.write(json.dumps(a, ensure_ascii=False) + "\n")
+        os.replace(tmp, config.ACCOUNTS_PATH)
+
+    # ---------- 自动补号 ----------
+
+    def needs_replenish(self) -> bool:
+        with self.lock:
+            return len(self.usable()) < int(self.cfg.get("min_accounts", 2))
+
+    def replenish(self, target=None, progress=None) -> int:
+        """注册到 target 个可用号。返回本次新增数。"""
+        cfg = self.cfg
+        target = int(target or cfg.get("target_accounts", 5))
+        target = min(target, int(cfg.get("max_accounts", 50)))
+        added = 0
+        while True:
+            with self.lock:
+                have = len(self.usable()) + self._registering
+                total = len(self.accounts)
+            if have >= target or total >= int(cfg.get("max_accounts", 50)):
+                break
+            self._registering += 1
+            try:
+                acct = register_one(cfg, len(self.accounts) + 1,
+                                    FutureSearchClient(proxy=cfg.get("proxy") or ""))
+                with self.lock:
+                    self.accounts.append(acct)
+                    self._append(acct)
+                added += 1
+                log(f"新号入库: {acct['email']} ({acct['api_key'][:16]}…)")
+                if progress:
+                    progress(added, acct)
+            except Exception as e:  # noqa: BLE001
+                log(f"补号失败: {type(e).__name__}: {str(e)[:160]}")
+            finally:
+                self._registering -= 1
+        return added
+
+    def ensure(self, progress=None):
+        """启动时/空闲时调用：低于下限就补到目标数。"""
+        if not self.cfg.get("auto_register", True):
+            return 0
+        if not self.needs_replenish():
+            return 0
+        log(f"可用号不足（{len(self.usable())}），开始补号…")
+        return self.replenish(progress=progress)
+
+    def status(self) -> dict:
+        with self.lock:
+            by = {}
+            for a in self.accounts:
+                by[a.get("status", "?")] = by.get(a.get("status", "?"), 0) + 1
+            bal = sum(float(a.get("balance") or 0) for a in self.usable())
+            return {"total": len(self.accounts), "usable": len(self.usable()),
+                    "by_status": by, "balance_usd": round(bal, 2),
+                    "registering": self._registering}
